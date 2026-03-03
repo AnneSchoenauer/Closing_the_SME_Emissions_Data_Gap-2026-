@@ -51,12 +51,10 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 ### 03_matching_algorithm_checks.Rmd (Chapter 3: Data)
 **Purpose:** Evaluates the activity-level matching algorithm against manually validated ground truth (precision, error, latency, coverage).  
 **Reproducibility:** Requires licensed ecoinvent data; not executable with public data.  
+**Role:** Transparency only.
 **Outputs:**  
 - Table 5 (Appendix): Evaluation metrics for the matching system (LaTeX).  
 
-<!-- end list -->
-
-**Role:** Transparency only.
 
 ---
 
@@ -84,13 +82,10 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 ### 05b_benchmark_tilt_large_firms.Rmd (Chapter 5.2)
 **Purpose:** Benchmarks tilt-based emissions against reported emissions of large firms (Dataland).  
 **Reproducibility:** Not executable; requires proprietary Dataland data and confidential firm mappings.  
+**Role:** Transparency only.
 **Outputs:**  
 - Table 2: Aggregate benchmarking results (main text)  
 - Table 10: Firm-level comparison (Appendix).  
-
-<!-- end list -->
-
-**Role:** Transparency only.
 
 ---
 
