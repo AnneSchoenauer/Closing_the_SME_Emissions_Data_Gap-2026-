@@ -41,7 +41,7 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 ---
 
 ### 02_stratification.Rmd (Chapter 3: Data)
-**Purpose:** Constructs NACE section × firm size strata and derives post-stratification weights by comparing the SME sample to German SME population benchmarks.  
+**Purpose:** Constructs NACE section × firm size strata and derives post-stratification weights by comparing the SME sample to German SME population counts.  
 **Reproducibility:** Fully executable with public data.  
 **Outputs:**  
 - Table 4 (Appendix): Sample counts, population counts, shares, and weights per stratum (LaTeX).
@@ -190,7 +190,7 @@ Proprietary firm registry data from Infobel.
 ---
 
 ### 03_Population_SME_key_figures_2025/
-Contains German SME population benchmarks by:
+Contains German SME population counts by:
 - 2-digit NACE code  
 - Employee size class  
 
