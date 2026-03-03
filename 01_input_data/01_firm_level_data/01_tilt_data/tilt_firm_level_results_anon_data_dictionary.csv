@@ -1,0 +1,75 @@
+
+variable,type,unit,description,notes
+company_id,string,NA,Anonymized firm identifier,Stable within dataset
+state,string,NA,German federal state (Bundesland),NA
+city,string,NA,City of firm location,NA
+EmployeesTotal,integer,employees,Total number of employees,Used to restrict to SMEs (<250)
+Revenue,numeric,EUR,Firm revenue,Used to restrict to SMEs (<=50m EUR)
+number_of_products_matched,integer,count,Number of products matched to the firm,Used in robustness/uncertainty analysis
+Dataland,logical,NA,TRUE if firm is matched to a Dataland company; NA otherwise,Used for large-firm benchmarking subset
+products,string,NA,Text field listing firm products,NA
+tilt_method_lca_source,string,NA,LCA/EEIO source used for matched products (ecoinvent or EPA),Determined by matching pipeline
+
+nace_2_list,string,NA,List of 2-digit NACE codes associated with matched products,May contain multiple codes
+nace_section,string,NA,1-digit NACE section or 'multi-sector' if products span sections,Primary grouping variable
+nace_section_list_adjusted,string,NA,List of 1-digit NACE sections with names,Used for labeling 
+
+tilt_method_TE_MEAN_tonnes,numeric,tonnes CO2e,Firm total emissions (tilt; Monte Carlo mean),Aggregated across absolute emissions of matched products
+tilt_method_TE_SD_tonnes,numeric,tonnes CO2e,Standard deviation of firm total emissions (tilt),Across Monte Carlo draws
+tilt_method_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile of firm total emissions (tilt),Monte Carlo lower bound
+tilt_method_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile of firm total emissions (tilt),Monte Carlo upper bound
+
+tilt_method_s1_TE_MEAN_tonnes,numeric,tonnes CO2e,Scope 1 emissions (tilt; Monte Carlo mean),Aggregated across scope 1 of matched products
+tilt_method_s1_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile of Scope 1 emissions (tilt),Monte Carlo lower bound
+tilt_method_s1_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile of Scope 1 emissions (tilt),Monte Carlo upper bound
+
+tilt_method_s2_TE_MEAN_tonnes,numeric,tonnes CO2e,Scope 2 emissions (tilt; Monte Carlo mean),Aggregated across scope 2 of matched products
+tilt_method_s2_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile of Scope 2 emissions (tilt),Monte Carlo lower bound
+tilt_method_s2_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile of Scope 2 emissions (tilt),Monte Carlo upper bound
+
+tilt_method_s3_TE_MEAN_tonnes,numeric,tonnes CO2e,Scope 3 emissions (tilt; Monte Carlo mean),Aggregated across scope 3 of matched products
+tilt_method_s3_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile of Scope 3 emissions (tilt),Monte Carlo lower bound
+tilt_method_s3_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile of Scope 3 emissions (tilt),Monte Carlo upper bound
+
+tilt_method_reduction_potential_TE_MEAN_tonnes,numeric,tonnes CO2e,Total emission reduction potential (tilt; Monte Carlo mean),Aggregate across climate-action levers
+tilt_method_reduction_potential_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile of total reduction potential (tilt),Monte Carlo lower bound
+tilt_method_reduction_potential_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile of total reduction potential (tilt),Monte Carlo upper bound
+
+reduction_potential_re1_TE_MEAN_tonnes,numeric,tonnes CO2e,Reduction potential from solar panels (re1; mean),Absolute reduction potential
+reduction_potential_re1_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile reduction potential from solar panels (re1),Monte Carlo Lower bound
+reduction_potential_re1_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile reduction potential from solar panels (re1),Monte Carlo Upper bound
+
+reduction_potential_re4_TE_MEAN_tonnes,numeric,tonnes CO2e,Reduction potential from heat pumps (re4; mean),Absolute reduction potential
+reduction_potential_re4_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile reduction potential from heat pumps (re4),Monte Carlo Lower bound
+reduction_potential_re4_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile reduction potential from heat pumps (re4),Monte Carlo Upper bound
+
+reduction_potential_ab2_TE_MEAN_tonnes,numeric,tonnes CO2e,Reduction potential from efficient agricultural machinery (ab2; mean),Absolute reduction potential
+reduction_potential_ab2_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile reduction potential from efficient agricultural machinery (ab2),Monte Carlo Lower bound
+reduction_potential_ab2_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile reduction potential from efficient agricultural machinery (ab2),Monte Carlo Upper bound
+
+oecd_TE_MEAN_tonnes,numeric,tonnes CO2e,OECD benchmark total emissions,Aggregated across matched OECD 2-digit NACE emission factors
+oecd_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile OECD benchmark total emissions,Monte Carlo Lower bound
+oecd_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile OECD benchmark total emissions,Monte Carlo Upper bound
+oecd_s1_TE_MEAN_tonnes,numeric,tonnes CO2e,OECD benchmark Scope 1 emissions,Aggregated across matched OECD 2-digit NACE scope 1 emissions
+oecd_s1_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile OECD benchmark Scope 1 emissions,Monte Carlo Lower bound
+oecd_s1_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile OECD benchmark Scope 1 emissions,Monte Carlo Upper bound
+oecd_s2_TE_MEAN_tonnes,numeric,tonnes CO2e,OECD benchmark Scope 2 emissions,Aggregated across matched OECD 2-digit NACE scope 2 emissions
+oecd_s2_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile OECD benchmark Scope 2 emissions,Monte Carlo Lower bound
+oecd_s2_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile OECD benchmark Scope 2 emissions,Monte Carlo Upper bound
+oecd_s3_TE_MEAN_tonnes,numeric,tonnes CO2e,OECD benchmark Scope 3 emissions,Aggregated across matched OECD 2-digit NACE scope 3 emissions
+oecd_s3_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile OECD benchmark Scope 3 emissions,Monte Carlo Lower bound
+oecd_s3_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile OECD benchmark Scope 3 emissions,Monte Carlo Upper bound
+
+epa_TE_MEAN_tonnes,numeric,tonnes CO2e,EPA benchmark total emissions,Aggregated across matched EPA EEIO-LCA commodity emission factors
+epa_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile EPA benchmark total emissions,Monte Carlo Lower bound
+epa_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile EPA benchmark total emissions,Monte Carlo Higher bound
+epa_s1_TE_MEAN_tonnes,numeric,tonnes CO2e,EPA benchmark Scope 1 emissions,Aggregated across matched EPA EEIO-LCA commodity scope 1 emission factors
+epa_s1_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile EPA benchmark Scope 1 emissions,Monte Carlo Lower bound
+epa_s1_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile EPA benchmark Scope 1 emissions,Monte Carlo Higher bound
+epa_s2_TE_MEAN_tonnes,numeric,tonnes CO2e,EPA benchmark Scope 2 emissions,Aggregated across matched EPA EEIO-LCA commodity scope 2 emission factors
+epa_s2_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile EPA benchmark Scope 2 emissions,Monte Carlo Lower bound
+epa_s2_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile EPA benchmark Scope 2 emissions,Monte Carlo Higher bound
+epa_s3_TE_MEAN_tonnes,numeric,tonnes CO2e,EPA benchmark Scope 3 emissions,Aggregated across matched EPA EEIO-LCA commodity scope 3 emission factors
+epa_s3_TE_p5_tonnes,numeric,tonnes CO2e,5th percentile EPA benchmark Scope 3 emissions,Monte Carlo Lower bound
+epa_s3_TE_p95_tonnes,numeric,tonnes CO2e,95th percentile EPA benchmark Scope 3 emissions,Monte Carlo Higher bound
+
