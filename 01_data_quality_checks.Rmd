@@ -1,6 +1,6 @@
 ---
 title: "01_data_quality_checks"
-author: "Anne Schoenauer
+author: "Anne Schoenauer"
 date: "2025-02-13"
 output: html_document
 ---
