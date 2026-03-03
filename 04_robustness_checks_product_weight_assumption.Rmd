@@ -85,7 +85,7 @@ TE_tilt <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_fir
   filter(EmployeesTotal <250) %>% 
   filter(Revenue <= 50000000) 
 
-#Cleaning of NACE data and creation of sector_label 
+#Cleaning of NACE data
 TE_tilt <- TE_tilt %>%
   mutate(
     # 1. Klammern und Anführungszeichen entfernen
