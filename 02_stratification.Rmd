@@ -1,0 +1,393 @@
+---
+title: "02b_stratification"
+author: "Tilman Trompke"
+date: "2025-02-13"
+output: html_document
+---
+
+The code generates Table 4 "Overview table of sample set counts and shares as well as population size counts and shares and weights per stratum, incl. shares (in%) compared to total dataset" in the Appendix. 
+
+## Overview of the analysis workflow
+This R Markdown script processes German SME population benchmarks and firm-level sample data, constructs common strata by NACE section and employee size class, evaluates sample coverage across strata, and derives post-stratification weights.
+
+### 01. Loading in the Libraries
+Loads the R packages needed for reading files, cleaning/wrangling data, and producing tables.
+
+### 02. Preparing the Data
+Loads and prepares two datasets:
+  - Population benchmarks (Germany SME factsheet Excel): cleans messy Excel structure (merged cells/blank rows), keeps 
+  - SME size classes (micro/small/medium), and extracts NACE identifiers (section letter, 2-digit code).
+Sample firm-level data (CSV): filters to SMEs (employees < 250, revenue ≤ 50m) and keeps only firms with positive emissions; creates the same micro/small/medium size classes.
+
+## 03. Population vs. sample data
+Aligns both datasets to the same strata (NACE section × employee size class), then:
+  - counts firms per stratum in the sample (n_j)
+  - totals firms per stratum in the population (N_j)
+  - computes post-stratification weights per stratum: weight = N_j / n_j
+  - reshapes the results into a wide summary table (micro/small/medium columns + totals)
+  - formats counts as N (percent%) for display
+  - creates a LaTeX table and writes it out as a .tex file for inclusion in a report/paper
+
+
+##01. Libraries
+```{r}
+
+library(readr)
+library(here)
+library(dplyr)
+library(janitor)
+library(readxl)
+library(tidyr)
+library(stringr)
+library(knitr)
+library(kableExtra)
+library(purrr)
+
+
+```
+
+##02. Data
+#02.1. Load data
+Germany factsheet is loaded from this page: https://single-market-economy.ec.europa.eu/smes/sme-strategy-and-sme-friendly-business-conditions/sme-performance-review_en#sba-fact-sheets 
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# load population data
+
+pop_raw <- read_xlsx(here("01_input_data/01_firm_level_data/03_Population_Germany/Germany_SME_key_figures_2025.xlsx"), 
+                  sheet ="NoE 2DGT", 
+                  skip = 8, # remove first 8 rows because they have no values
+                  .name_repair = "minimal") |> # avoid that r automatically renames column names if duplicates exist because I remove duplicate columns in next step
+  select(1:20) |> # remove irrelevant columns with same name
+  clean_names() 
+  
+
+# load sample tilt-data
+sample_raw <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) |> 
+  mutate(company_id = as.character(company_id),  
+  nace_section_list_adjusted = gsub('[\\[\\]"]', '', nace_section_list_adjusted)) |>
+  filter(EmployeesTotal < 250) |> 
+  filter(Revenue <= 50000000) |> 
+  filter(tilt_method_TE_MEAN_tonnes > 0) |> 
+  rename(
+    nace_section_list = nace_section_list_adjusted
+  )
+
+```
+
+#02.2. Clean population data - Germany SME key Figurs 2025
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+colnames(pop_raw)
+
+# remove empty row
+pop_raw <- pop_raw[-1,]
+
+# solve merged cell problem --> many empty values in left column
+pop_raw <- pop_raw |>
+  mutate(division_nace_rev_2 = na_if(division_nace_rev_2, "")) %>%  # treat "" as missing
+  fill(division_nace_rev_2, .direction = "down")
+
+# fill in NAs in 2025 columns with next best year
+pop_raw <- pop_raw |>
+  rowwise() |>
+  mutate(x2025 = coalesce(x2025, x2024, x2023, x2022, x2021, x2020, x2019, x2018)) |>
+  ungroup()
+
+# subselection
+  # remove whitespaces etc
+  pop <- pop_raw |>
+    mutate(size_class = str_squish(size_class))
+  
+  # remove irrelevant size classes
+  pop <- pop %>%
+    filter(size_class %in% c("0 - 9", "10 - 49", "50 - 249"))
+
+  # sanity check
+  table(pop$size_class)
+
+  # select relevant columns
+  pop <- pop |> 
+    select(division_nace_rev_2, size_class, x2025)
+  
+# create additional column with nace 2 digit
+  pop <- pop |>
+  mutate(
+    x2_nace = str_extract(division_nace_rev_2, "(?<=^[A-Z])\\d{2}")
+  ) |>
+  relocate(x2_nace, .after = division_nace_rev_2)
+
+  # sanity check
+  unique(pop$x2_nace)
+  
+# create additional column with nace section
+pop <- pop |>
+  mutate(
+    section_nace = str_extract(division_nace_rev_2, "^[A-Z]")
+  ) |>
+  relocate(section_nace, .after = division_nace_rev_2)
+
+  # sanity check
+  unique(pop$section_nace)
+  
+# create size class name 
+  pop <- pop |> 
+  mutate(emp_size_class = case_when(
+    size_class == "0 - 9" ~ "micro", 
+    size_class == "10 - 49" ~ "small", 
+    size_class == "50 - 249" ~ "medium",
+    TRUE ~ NA_character_
+  )) |> 
+  relocate(emp_size_class, .after = size_class)
+
+rm(pop_raw)
+  
+```
+
+#02.3. Clean sample data
+# # select relevant columns
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+sample <- sample_raw |> 
+  select(
+    company_id, 
+    nace_section, 
+    nace_section_list, 
+    EmployeesTotal
+  )
+
+```
+
+
+#02.4. Create Size Class for stratification
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# create emp size class label (sector labels already exists)
+sample <- sample |>
+  mutate(
+    emp_size_class = case_when(
+      EmployeesTotal >= 0   & EmployeesTotal <= 9   ~ "micro",
+      EmployeesTotal >= 10  & EmployeesTotal <= 49  ~ "small",
+      EmployeesTotal >= 50  & EmployeesTotal <= 249 ~ "medium",
+      TRUE ~ NA_character_
+    ))
+
+  # sanity check
+  table(sample$emp_size_class)
+
+```
+
+
+##03. Population vs. sample data
+#03.1. Create same strata (nace Section x employee size class) in both the population dataset and the sample dataset
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+## SAMPLE
+# create stratum (nace section x employee size class) column  in sample data
+  sample <- sample |>
+  mutate(stratum = paste(nace_section, emp_size_class, sep = "_")) 
+
+## POPULATION
+# create stratum (nace section x employee size class) column in pop data
+  pop <- pop |>
+  mutate(stratum = paste(section_nace, emp_size_class, sep = "_")) |> 
+    relocate(stratum, .after = emp_size_class)
+
+# sanity check
+table(pop$stratum)
+table(sample$stratum)
+  
+```
+
+#03.2. Compute population / sample counts
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+## SAMPLE 
+sample_counts <- sample |>
+  group_by(stratum) |>
+  summarise(
+    n_j = n(),
+    .groups = "drop"
+  )
+
+  summary(sample_counts)
+  
+  # count share of strata below 20 
+  sample_counts %>%
+  summarise(share_below_20 = mean(n_j < 20))
+  
+  # count share of strata below 25
+  sample_counts %>%
+  summarise(share_below_20 = mean(n_j < 25))
+
+  
+## POPULATION
+pop_counts <- pop |>
+  group_by(stratum) |>
+  summarise(
+    N_j = sum(x2025),   # or whatever the population count variable is
+    .groups = "drop"
+  )
+
+  summary(pop_counts)
+  
+  # count share of strata below 25
+  pop_counts %>%
+  summarise(share_below_20 = mean(N_j < 25))
+
+# Overview  
+sample_counts
+pop_counts
+
+```
+
+#03.3. Create weights
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+# create weights
+weights_df <- sample_counts %>%
+  left_join(pop_counts, by = "stratum")
+
+summary(weights_df$N_j)
+summary(weights_df$n_j)
+
+# calculate weights
+weights_df <- weights_df |>
+  mutate(weight = N_j / n_j)
+
+```
+
+#03.4. Create summary weights table with sample size per stratum for sample, pop, and weights
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+weights_df_wide <- weights_df |> 
+  mutate(weight = round(weight, 2)) |> 
+  separate(
+    stratum,
+    into = c("sector", "size"),
+    sep = "_",
+    remove = TRUE
+  ) |>
+  mutate(size = factor(size, levels = c("micro", "small", "medium"))) |>
+  pivot_longer(
+    cols = c(n_j, N_j, weight),
+    names_to = "measure",
+    values_to = "value"
+  ) |>
+  pivot_wider(
+    id_cols = sector,
+    names_from = c(measure, size),
+    values_from = value,
+    names_sep = "_"
+  ) |>
+  arrange(sector) |> 
+  select(sector, n_j_micro, n_j_small, n_j_medium, N_j_micro, N_j_small, N_j_medium, weight_micro, weight_small, weight_medium)
+
+weights_df_wide <- weights_df_wide |>
+  mutate(
+    n_j_total    = rowSums(across(all_of(c("n_j_micro","n_j_small","n_j_medium"))), na.rm = TRUE),
+    N_j_total    = rowSums(across(all_of(c("N_j_micro","N_j_small","N_j_medium"))), na.rm = TRUE),
+    weight_total = N_j_total / n_j_total
+  )
+
+weights_df_wide <- weights_df_wide |>
+  bind_rows(
+    weights_df_wide |>
+      summarise(
+        across(
+          where(is.numeric),
+          ~ sum(.x, na.rm = TRUE)
+        )
+      ) |>
+      mutate(sector = "Total")
+  ) |> 
+    select(sector, n_j_micro, n_j_small, n_j_medium, n_j_total, N_j_micro, N_j_small, 
+           N_j_medium, N_j_total, weight_micro, weight_small, weight_medium, weight_total)
+
+
+```
+
+#03.5. Create pretty table with %-values
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+n_j_cols <- c("n_j_micro", "n_j_small", "n_j_medium", "n_j_total")
+N_j_cols <- c("N_j_micro", "N_j_small", "N_j_medium", "N_j_total")
+
+n_j_grand <- weights_df_wide |> 
+  filter(sector == "Total") |> 
+  summarise(x = first(n_j_total)) |> 
+  pull(x)
+
+N_j_grand <- weights_df_wide |> 
+  filter(sector == "Total") |> 
+  summarise(x = first(N_j_total)) |> 
+  pull(x)
+
+weights_df_wide_display <- weights_df_wide |>
+  mutate(
+    across(
+      all_of(n_j_cols),
+      ~ sprintf(
+        "%d (%.1f%%)",
+        as.integer(.x),
+        if (!is.na(n_j_grand) && n_j_grand > 0) 100 * as.numeric(.x) / n_j_grand else NA_real_
+      )
+    ),
+    across(
+      all_of(N_j_cols),
+      ~ sprintf(
+        "%d (%.1f%%)",
+        as.integer(.x),
+        if (!is.na(N_j_grand) && N_j_grand > 0) 100 * as.numeric(.x) / N_j_grand else NA_real_
+      )
+    )
+  )
+
+
+```
+
+#03.6 Latex format & export Table 4
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+latex_tbl_counts <- weights_df_wide_display |>
+  kable(
+    format = "latex",
+    booktabs = TRUE,
+    escape = TRUE,
+    align = "l"
+  ) |>
+  add_header_above(
+    c(
+      " " = 1,
+      "sample counts per stratum" = 4,
+      "population counts per stratum" = 4,
+      "weights per stratum" = 4
+    )
+  ) |>
+  kable_styling(
+    latex_options = c(
+      "hold_position",
+      "scale_down"      # auto-scale to page width
+    ),
+    font_size = 8       # fits A4 landscape well
+  ) |>
+  column_spec(1, width = "2.5cm") |>  # sector column
+  column_spec(2:13, width = "1.6cm")  # all numeric columns
+
+latex_tbl_counts
+
+writeLines(latex_tbl_counts, here("02_output_data/02_stratification/Table-4_sample_pop_weights_per_stratum.tex"))
+```
+
+##04. Attachement to firm data
+We assign the strata weights to the firm list for later usage in the analysis section
+```{r}
+# attach weights
+  sample_weights <- sample |>
+    left_join(
+      weights_df %>% select(stratum, weight),
+      by = "stratum"
+    )
+
+```
+
+
+##07. Save data
+```{r}
+write_csv(sample_weights, here("02_output_data/02_stratification/sample_with_weights.csv")) # used in analysis section
+write_csv(weights_df_wide_display, here("02_output_data/02_stratification/weights_per_stratum_percentages.csv")) # shown in Supplementary Material
+```
+

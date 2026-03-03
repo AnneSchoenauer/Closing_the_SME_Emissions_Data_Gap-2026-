@@ -1,0 +1,415 @@
+---
+title: "04_robustness_checks_product_weight_assumption"
+author: "Anne Schoenauer"
+date: "2025-02-13"
+output: html_document
+---
+
+##Overview of the analysis workflow
+This script assesses uncertainty in firm-level total emissions estimates arising from unknown product-level revenue shares. Using Monte Carlo simulations based on a symmetric Dirichlet distribution, the workflow treats repeated emissions draws as noisy measurements of a latent firm-level emissions value and evaluates the reliability of cross-firm comparisons. The analysis decomposes total variation into within-firm measurement noise and between-firm structural heterogeneity and provides quantitative and visual diagnostics of uncertainty propagation. The script generates the following Tables and Figures in the Appendix 11.2.1: 
+  - Table 6: Uncertainty summary: Noise to signalling
+  - Table 7: Robustness of Firm-Level Emissions Rankings to Product-Mix Uncertainty
+  - Figure 8: Caterpillar of firm emissions with simulation uncertainty indicated by the 90th confidence interval
+  - Figure 9: Log-Scaled Denisity of Emissions with 5th (green) and 95th (red) confidence intervals.Low (<1M EUR  Revenue)
+
+The workflow consists of five main steps:
+
+###1. Loading required libraries and setting plotting defaults
+All required R packages for data handling, statistical analysis, visualization, and LaTeX export are loaded. A consistent plotting theme and color scales are defined to ensure uniform styling of all graphical outputs.
+
+###2. Loading and preparing firm-level emissions data
+Firm-level emissions results produced by the tilt pipeline are imported and filtered to small and medium-sized enterprises (SMEs). Relevant emissions statistics are retained, including mean total emissions and associated uncertainty measures (standard deviation, 5th and 95th percentiles). Sector labels are cleaned and standardized, and auxiliary firm characteristics such as revenue and product counts are prepared for subsequent analysis.
+
+###3. Noise–signal decomposition and uncertainty summary
+The script decomposes variation in total emissions into:
+  - Between-firm variation, capturing structural heterogeneity in emissions intensity across firms, and
+  - Within-firm variation, capturing measurement noise induced by uncertainty in product-level revenue weights.
+Based on this decomposition, a noise–signal ratio is computed following a classical reliability framework. Summary statistics describing central tendencies, dispersion, and uncertainty magnitudes are compiled and exported as LaTeX tables for reporting. This is used for Table 6: Uncertainty summary: Noise to signalling. 
+
+###4. Product-count–based uncertainty analysis
+To examine how uncertainty scales with model dimensionality, firms are grouped by the number of matched products. For each product-count category, the script computes within-firm uncertainty, between-firm dispersion, and the corresponding noise–signal ratio. This step quantifies the extent to which higher product counts increase uncertainty due to additional degrees of freedom in the Dirichlet-based product-mix simulation.This is used for Table 6: Uncertainty summary: Noise to signalling. 
+
+###5. Visualization of uncertainty and emissions distributions
+The script generates diagnostic visualizations to assess the stability and structure of the simulated emissions estimates, including:
+  - Caterpillar plots showing firm-level emissions with 5th–95th percentile uncertainty intervals, (Figure 8:  Caterpillar of firm emissions with simulation uncertainty indicated by the 90th confidence interval)
+  - Density plots of total emissions by revenue class, comparing point estimates with uncertainty bounds.(Figure 9: Log-Scaled Denisity of Emissions with 5th (green) and 95th (red) confidence intervals.Low (<1M EUR  Revenue))
+All figures are saved to disk for inclusion in robustness checks and supplementary materials.
+Overall, this script serves as a robustness and reliability assessment layer, providing transparent diagnostics of how product-mix uncertainty propagates into firm-level emissions estimates and affects cross-firm comparability.
+
+###6. Analysing impact of intervals
+This script evaluates the robustness of firm-level emissions rankings to uncertainty in product-level revenue weights. Firms are ranked using lower-bound, point, and upper-bound emissions estimates, and differences across rankings are used to assess rank stability, identify firms with large rank shifts, and evaluate the robustness of top-emitter classifications. This is used for Table 7: Robustness of Firm-Level Emissions Rankings to Product-Mix Uncertainty.
+
+##01. Libraries
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(readr)
+library(here)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(stringr)
+library(purrr)
+library(latex2exp)
+library(knitr)
+library(kableExtra)
+library(viridis)
+library(ggplot2)
+library(showtext)
+
+# Set consistent plot theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+
+# Optional: define viridis-based color scales (for consistency)
+scale_color_viridis_d <- function(...) scale_color_viridis(discrete = TRUE, option = "D", ...)
+scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option = "D", ...)
+
+```
+
+##02. Loading in data and preparation
+We load in firm-level data and select total emissions (mean, 95th and 5th uncertainty range). We also create a SD. 
+
+```{r, warning=FALSE, message=FALSE}
+#Loading in firm-level data
+TE_tilt <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) %>% 
+  filter(EmployeesTotal <250) %>% 
+  filter(Revenue <= 50000000) 
+
+#Cleaning of NACE data and creation of sector_label 
+TE_tilt <- TE_tilt %>%
+  mutate(
+    # 1. Klammern und Anführungszeichen entfernen
+    sector_label = str_remove_all(nace_section_list_adjusted, "\\[|\\]|\"")) %>% 
+   select(company_id, Revenue, tilt_method_TE_MEAN_tonnes, tilt_method_TE_SD_tonnes, tilt_method_TE_p95_tonnes, tilt_method_TE_p5_tonnes, sector_label, number_of_products_matched)
+
+```
+
+##03. Noise-to-Signal Ratio  
+Creates Table 6 (first part) Uncertainty summary: Noise to signalling.
+```{r, warning=FALSE, message=FALSE}
+
+##Create across SD and mean
+# Mean across all firms
+TE_overall_mean <- mean(TE_tilt$tilt_method_TE_MEAN_tonnes, na.rm = TRUE)
+
+# Between-firm standard deviation
+SD_between <- sd(TE_tilt$tilt_method_TE_MEAN_tonnes, na.rm = TRUE)
+
+##Create Signal-to-Noise 
+# Mean within-firm standard deviation
+mean_SD_within <- mean(TE_tilt$tilt_method_TE_SD_tonnes, na.rm = TRUE)
+
+# Final noise–signal ratio
+SD_ratio <- mean_SD_within / SD_between
+
+##Construct summary tibble
+uncertainty_summary <- tibble(
+  Statistic = c(
+    "Number of firms (N)",
+    "Mean Total Emissions",
+    "Mean SD_within",
+    "Total deviation coefficient of variation (in %)", 
+    "Median Total Emissions",
+    "Median SD_within",
+    "Standard Deviation to median (in %)",
+    "P25 of SD_within",
+    "P75 of SD_within",
+    "Max SD_within",
+    "SD_between",
+    "Noise–signal ratio (SD_ratio)"
+  ),
+  Value = format(c(
+    nrow(TE_tilt),
+    mean(TE_tilt$tilt_method_TE_MEAN_tonnes, na.rm = TRUE), 
+    mean_SD_within,
+    mean_SD_within/mean(TE_tilt$tilt_method_TE_MEAN_tonnes, na.rm = TRUE)*100, 
+    median(TE_tilt$tilt_method_TE_MEAN_tonnes, na.rm =TRUE), 
+    median(TE_tilt$tilt_method_TE_SD_tonnes, na.rm = TRUE),
+    median(TE_tilt$tilt_method_TE_SD_tonnes, na.rm = TRUE)/median(TE_tilt$tilt_method_TE_MEAN_tonnes, na.rm =TRUE)*100, 
+    quantile(TE_tilt$tilt_method_TE_SD_tonnes, 0.25, na.rm = TRUE),
+    quantile(TE_tilt$tilt_method_TE_SD_tonnes, 0.75, na.rm = TRUE),
+    max(TE_tilt$tilt_method_TE_SD_tonnes, na.rm = TRUE),
+    SD_between,
+    SD_ratio
+  ), scientific = FALSE, big.mark = ",", digits = 2)
+)
+
+uncertainty_summary
+
+uncertainty_summary %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Uncertainty summary: Noise to signalling") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/04_robustness_checks_product_weights/Table-6-first-part-robustness_noise_to_signalling.tex")
+```
+
+##03. Product Count Harm   
+Creates Table 6 (second part) Uncertainty summary: Noise to signalling.
+Uncertainty increases with the number of products assigned to a firm, because the Dirichlet distribution allocates weights over a higher-dimensional simplex.
+To quantify this effect, we group firms by product-count categories and compute the distribution of $SD_{\text{within},f}$ within each group. Higher product counts imply more degrees of freedom in the product-mix simulation, and therefore wider uncertainty intervals.
+
+#Table (reinnehmen)
+```{r, warning=FALSE, message=FALSE}
+#Create product count category
+TE_tilt <- TE_tilt %>%
+  mutate(
+    number_of_products_matched_group = case_when(
+      number_of_products_matched == 1 ~ "1 product",
+      number_of_products_matched %in% 2:3 ~ "2–3 products",
+      number_of_products_matched %in% 4:10 ~ "4–10 products",
+      number_of_products_matched > 10 ~ ">10 products",
+      TRUE ~ NA_character_
+    )
+  )
+
+##Summary Table
+product_uncertainty_summary <- TE_tilt %>%
+  group_by(number_of_products_matched_group) %>%
+    summarise(
+    N = n(),
+    Mean_SD_within = mean(tilt_method_TE_SD_tonnes, na.rm = TRUE),
+    SD_between = sd(tilt_method_TE_MEAN_tonnes, na.rm = TRUE),
+    SD_ratio = Mean_SD_within / SD_between,
+    .groups = "drop"
+  ) %>%
+  arrange(factor(number_of_products_matched_group, levels = c("1 product", "2–3 products", "4–10 products", ">10 products")))
+
+product_uncertainty_summary
+
+product_uncertainty_summary %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Product Count Harm") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/04_robustness_checks_product_weights/Table-6-second-part-robustness_product_count_harm.tex")
+  
+```
+
+
+##Visualisation Distribution of Total Emissions
+Creates Figure 8: Caterpillar of firm emissions with simulation uncertainty indicated by the 90th confidence interval
+If most intervals are tight and centered, your simulation output is stable and informative.
+If many intervals are very wide or have unusual patterns (e.g., sharp jumps), it may indicate modeling issues, extreme product mixes, or data quality concerns.
+```{r, warning=FALSE, message=FALSE}
+# Prepare data: sort firms and assign order
+TE_tilt <- TE_tilt %>%
+  arrange(tilt_method_TE_MEAN_tonnes) %>%
+  mutate(firm_order = row_number())
+
+# Create caterpillar plot
+caterpillar_plot <- ggplot(TE_tilt, aes(x = firm_order)) +
+  geom_errorbar(
+    aes(ymin = tilt_method_TE_p5_tonnes, ymax = tilt_method_TE_p95_tonnes),
+    width = 0.3, color = "gray60", alpha = 0.5
+  ) +
+  geom_point(aes(y = tilt_method_TE_MEAN_tonnes),
+             color = "steelblue", size = 1.5, alpha = 0.7) +
+  scale_y_log10(
+    labels = label_comma(big.mark = ".", decimal.mark = ","),
+    breaks = c(1, 10, 100, 1e3, 1e4, 1e5, 1e6)
+  ) +
+  labs(
+    #title = "Caterpillar Plot: Firm-Level Emissions with 90% Uncertainty Interval",
+    #subtitle = "Firms are sorted by mean total emissions; vertical lines show 5th–95th percentile range",
+    x = "Firms (sorted by emissions)",
+    y = "Emissions (log scale, tonnes CO2e)"
+  )
+
+# Save the plot
+ggsave(
+  filename = "02_output_data/04_robustness_checks_product_weights/Figure-8-robustness_caterpillar_plot_firm_emissions.pdf",
+  plot = caterpillar_plot,
+  width = 8, height = 6, dpi = 300
+)
+
+caterpillar_plot
+```
+
+
+##Visualisation Distribution of Total Emissions
+Figure 9: Log-Scaled Denisity of Emissions with 5th (green) and 95th (red) confidence intervals.
+
+```{r emissions-distribution}
+# create revenue groups
+TE_tilt <- TE_tilt %>%
+  mutate(
+    Revenue_class = case_when(
+      Revenue < 1000000 ~ "Low (<1M EUR Revenue)",
+      Revenue < 10000000 ~ "Medium (1–10M EUR Revenue)",
+      TRUE ~ "High (10-50M EUR Revenue)"
+    )
+  )
+
+TE_tilt <- TE_tilt %>%
+  mutate(Revenue_class = factor(Revenue_class, levels = c("Low (<1M EUR Revenue)", "Medium (1–10M EUR Revenue)", "High (10-50M EUR Revenue)")))
+
+te_distribution_by_revenue <- ggplot(TE_tilt) +
+  # Main density (point estimate)
+  geom_density(aes(x = tilt_method_TE_MEAN_tonnes), fill = "steelblue", alpha = 0.5) +
+
+  # Lower and upper bounds
+  geom_density(aes(x = tilt_method_TE_p5_tonnes), color = "seagreen", linetype = "dashed", size = 0.7) +
+  geom_density(aes(x = tilt_method_TE_p95_tonnes), color = "indianred", linetype = "dashed", size = 0.7) +
+
+  # Log-scale axis
+  scale_x_log10(labels = label_comma(big.mark = ".", decimal.mark = ",")) +
+
+  # Facet by Revenue class
+  facet_wrap(~ Revenue_class, scales = "fixed") +
+
+  labs(
+   # title = "Emissions by Revenue Class with Uncertainty Bounds",
+  #  subtitle = "Dashed lines show the 10th (blue) and 90th (red) percentile bounds",
+    x = "Emissions (log scale, tonnes CO2e)",
+    y = "Density"
+  )
+
+te_distribution_by_revenue
+
+# Save the plot
+ggsave(
+  filename = "02_output_data/04_robustness_checks_product_weights/Figure-9-log_scale_distribution_by_revenue.pdf",
+  plot = te_distribution_by_revenue,
+  width = 8, height = 6, dpi = 300
+)
+
+```
+
+##04a. Impact of Confidence Intervals on Firm Rankings (Part I)
+Creates Table 7 (first part): Robustness of Firm-Level Emissions Rankings to Product-Mix Uncertainty.
+To assess the robustness of firm-level rankings with respect to uncertainty in product weights, we rank firms' total emissions based on their lower bound estimate $L_f$, point estimate $\bar{TE}_f$, and the upper bound estimate $U_f$. If rankings differ substantially across these three cases, the indicator may not support robust firm-level comparisons.
+
+```{r, warning=FALSE, message=FALSE}
+#Ranking according to lower and upper bound, as well by mean values
+TE_tilt <- TE_tilt %>%
+  mutate(
+    rank_L = rank(-tilt_method_TE_p5_tonnes, ties.method = "average"),     # rank by lower bound (descending)
+    rank_E = rank(-tilt_method_TE_MEAN_tonnes, ties.method = "average"),   # rank by mean estimate (descending)
+    rank_U = rank(-tilt_method_TE_p95_tonnes, ties.method = "average"),    # rank by upper bound (descending)
+    rank_diff = abs(rank_U - rank_L))                                       # absolute rank difference, This measures how much a firm's ranking changes between:
+                                                                           # Best-case emissions (lower bound), Worst-case emissions (upper bound), if rank_diff = 0 --> stability
+
+
+# Compute Summary Statistic for Rank stability
+N <- nrow(TE_tilt)
+
+# Threshold for "large" rank difference: 20% of the whole population 
+rank_threshold <- 0.2 * N
+
+# Add shift flag
+TE_tilt <- TE_tilt %>%
+  mutate(
+    shifted = abs(rank_L - rank_U) > rank_threshold
+  )
+
+# Count shifting firms
+n_shifted <- sum(TE_tilt$shifted, na.rm = TRUE)
+n_total <- nrow(TE_tilt)
+share_shifted <- round(n_shifted / n_total * 100, 1)
+
+# Kendall’s tau correlation between lower and upper bound rankings
+kendall_tau <- cor(TE_tilt$rank_L, TE_tilt$rank_U, method = "kendall")
+
+# Share of firms with rank change > 20% of population
+share_large_rank_diff <- mean(TE_tilt$rank_diff > rank_threshold)
+
+#Share of top 20% firms stable across bounds ---
+top20pct_count <- ceiling(0.20 * N)
+
+top20pct_L <- TE_tilt %>% arrange(rank_L) %>% slice(1:top20pct_count) %>% pull(company_id)
+top20pct_U <- TE_tilt %>% arrange(rank_U) %>% slice(1:top20pct_count) %>% pull(company_id)
+
+top20pct_overlap <- length(intersect(top20pct_L, top20pct_U)) / top20pct_count
+
+# Aggregate Level Effects
+mean_diff <- mean(TE_tilt$tilt_method_TE_p95_tonnes, na.rm = TRUE) - mean(TE_tilt$tilt_method_TE_p5_tonnes, na.rm = TRUE)
+median_diff <- median(TE_tilt$tilt_method_TE_p95_tonnes, na.rm = TRUE) - median(TE_tilt$tilt_method_TE_p5_tonnes, na.rm = TRUE)
+
+# Summary Table Rank Stability
+rank_stability_summary <- tibble(
+  Statistic = c(
+    "Mean(U_f) - Mean(L_f)",
+    "Median(U_f) - Median(L_f)",
+    "Rank correlation (Kendall τ)",
+    "Share of firms with Δrank > 20%",
+    "Absolute number of firms with Δrank > 20%",
+    "Share of top-20% firms stable across bounds"
+  ),
+  Value = c(
+    mean_diff,
+    median_diff,
+    kendall_tau,
+    share_large_rank_diff,
+    n_shifted,
+    top20pct_overlap
+  )
+) %>%
+  mutate(Value = comma(Value, accuracy = 0.01))
+
+rank_stability_summary
+
+rank_stability_summary %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Rank Stability Summary") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/04_robustness_checks_product_weights/Table-7-first-part-robustness_rank_stability_summary.tex")
+
+```
+
+
+
+##04b. Impact of Confidence Intervals on Firm Rankings (Part II)
+Creates Table 7 (second part).Robustness of Firm-Level Emissions Rankings to Product-Mix Uncertainty. 
+In addition to reporting point estimates, we evaluate the width of the 90\% uncertainty interval for each firm. 
+Let $L_f$ and $U_f$ denote the 5th and 95th percentiles of the Monte-Carlo distribution of total emissions for firm $f$. 
+These bounds represent the range of plausible emission outcomes given the uncertainty in the firm’s product mix.
+
+```{r, warning=FALSE, message=FALSE}
+#Calculate relative_range
+TE_tilt <- TE_tilt %>%
+  mutate(
+    interval_width = tilt_method_TE_p95_tonnes - tilt_method_TE_p5_tonnes,
+    # Safe relative range (avoid dividing by 0)
+    relative_range = interval_width / (abs(tilt_method_TE_MEAN_tonnes) + 1e-6)
+  )
+
+
+bounds_summary <- tibble(
+  Statistic = c(
+    "Mean interval width E[Δ_f]",
+    "Median interval width",
+    "Mean relative range E[RelRange_f]",
+    "P75 relative range",
+    "Share of firms with RelRange_f > 1"
+  ),
+  Value = c(
+    mean(TE_tilt$interval_width, na.rm = TRUE),
+    median(TE_tilt$interval_width, na.rm = TRUE),
+    mean(TE_tilt$relative_range, na.rm = TRUE),
+    quantile(TE_tilt$relative_range, 0.75, na.rm = TRUE),
+    mean(TE_tilt$relative_range > 1, na.rm = TRUE)
+  )
+)
+
+# Format for printing without scientific notation
+bounds_summary <- bounds_summary %>%
+  mutate(Value = comma(Value, accuracy = 0.01))
+
+print(bounds_summary)
+
+bounds_summary %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Interval analysis") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/04_robustness_checks_product_weights/Table-7-second-part-robustness_interval_analysis.tex")
+
+```

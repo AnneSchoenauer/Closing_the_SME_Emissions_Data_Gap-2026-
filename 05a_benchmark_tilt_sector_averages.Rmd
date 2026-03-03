@@ -1,0 +1,1012 @@
+---
+title: "05_benchmark_tilt_sector_averages"
+author: "Anne Schoenauer"
+date: "2025-02-13"
+output: html_document
+---
+
+
+Note: This script requires partly licensed data from ecoinvent (Part 03. CV Analysis) and therefore cannot be executed using the publicly available anonymized dataset. The code is provided for transparency only.
+
+##Overview of the analysis workflow
+This R Markdown compares firm-level emissions estimated with the tilt method (product-level LCA + industry EEIO-LCA factors) to alternative firm-level estimates built from sector-average emission factors (OECD), computed on the same product mix via Monte Carlo simulation. The goal is to (i) check aggregate consistency with sector benchmarks and (ii) show that tilt generates substantially more firm-level heterogeneity than sector averages.
+
+##1) Libraries and plotting defaults
+Loads packages for data import, wrangling, LaTeX table export, and plotting. Sets a consistent ggplot theme and viridis helper scales.
+
+##2) Load and clean input data
+Imports activity-level emission factors from ecoinvent, EPA, and OECD; cleans NACE codes and removes invalid/zero factors.
+Imports firm-level tilt results for SMEs (Employees < 250; Revenue ≤ 50m; positive emissions) and cleans sector labels for plotting.
+
+##3) Table 1 (Section 5.1): variability of emission factors by sector
+Computes the coefficient of variation (CV) of emission factors by 1-digit NACE section for ecoinvent, OECD, and EPA, merges results, and exports a LaTeX table:
+Table output: cv_emission_factors.tex
+
+##4) Figure 10 (Appendix 9.9.3) + additional example: firm-level dispersion in emission intensity
+Computes firm-level emission intensities (kg CO₂e per EUR) under tilt / EPA / OECD and visualizes within-industry dispersion using bubble plots:
+  - Figure 10 (A01): granularity_plot_a01.pdf
+  - Additional example (C20): granularity_plot_c20.pdf
+
+##5) Figure 2: firm-level comparison tilt vs OECD (scatter with uncertainty)
+Creates a log–log scatter of tilt vs OECD mean firm emissions with p5–p95 error bars, a 45° line, and a LOESS trend:
+  - Figure 2: scatter_plot.pdf
+
+##6) Figure 11: Bland–Altman agreement (overall, log scale) + outlier table
+Computes log-scale Bland–Altman statistics (bias and limits of agreement), counts firms outside LoA, exports a LaTeX table, and saves the plot:
+  - Table output: Bland_Altman_all_test.tex
+  - Figure 11: Bland_Altman_all_test.pdf
+
+##7) Figure 12 (Appendix 9.3.2) + Figure 3 (Section 5.1): relative differences tilt vs OECD
+Computes firm-level relative differences ((tilt−OECD)/OECD), exports summary tables (by sector and overall), and produces two visuals:
+  - Appendix boxplot: boxplot_rel_differences.pdf 
+  - Figure 3: relative_differences_plot.pdf
+(Referenced as Figure 12 in Appendix): distribution of relative differences by sector (via the boxplot + sector summaries)
+Table outputs: 
+  - relative_differences_per_sector_ecoinvent_vs_oecd.tex
+  - relative_differences_all_ecoinvent_vs_oecd.tex
+
+##8) Table 9 (Appendix 9.3.2) and totals tables: weighted sector totals tilt vs OECD
+Joins firm-level sampling weights, aggregates weighted tilt emissions (total + scopes) by NACE section, prepares OECD sector totals (unit conversion), compares totals and shares, and exports LaTeX tables:
+Table outputs:
+- total_oecd_tilt_comparison.tex
+- scope1-3_shares_oecd_tilt_comparison.tex
+
+
+##01. Libraries
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(readr)
+library(here)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(ggforce)
+library(latex2exp)
+library(knitr)
+library(kableExtra)
+library(viridis)
+library(showtext)
+library(tidyr)
+library(readxl)
+library(writexl)
+
+
+# Set a clean and scientific base theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+
+
+# Install once if needed
+# Use a color scale from viridis (for consistency and accessibility)
+scale_color_viridis_d <- function(...) scale_color_viridis(discrete = TRUE, option = "D", ...)
+scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option = "D", ...)
+
+
+```
+
+
+##02. Loading in data
+```{r, warning=FALSE, message=FALSE}
+##Emission Factors - comparison for CV
+#Read in emission factors from ecoinvent
+ecoinvent <- read_csv(here("01_input_data/03_activity_level_data/03_ecoinvent_data/ecoinvent_activity_level.csv")) %>% 
+  rename(emission_factor_ecoinvent = s1_s2_s3_per_euro) %>%
+  filter(!(is.na(geography_priority))) %>% 
+  filter(!(emission_factor_ecoinvent == 0))
+
+ecoinvent <- ecoinvent %>%
+  mutate(nace_2 = str_remove_all(nace_2_list, "\\[|\\]|\"")) 
+
+#Read in emission factors from EPA
+epa <- read_csv(here("01_input_data/03_activity_level_data/04_epa_data/epa_activity_level.csv")) %>% 
+  rename(emission_factor_epa = emission_factor_per_euro) %>% 
+  filter(!(emission_factor_epa == 0))
+
+#Read in emission factors from OECD
+oecd <- read_csv(here("01_input_data/03_activity_level_data/02_oecd_data/oecd_activity_level.csv")) %>% 
+  rename(emission_factor_oecd = emission_factor_per_euro) %>% 
+  filter(!(emission_factor_oecd == 0))
+
+#Cleaning of NACE data and creation of sector_label 
+oecd <- oecd %>%
+  mutate(nace_2 = str_remove_all(nace_2, "\\[|\\]|\"")) 
+
+epa <- epa %>%
+  mutate(nace_2 = str_remove_all(nace_2_list, "\\[|\\]|\"")) 
+
+nace_code <- oecd %>% 
+  select(nace_section_code, nace_2, nace_section) %>% 
+  distinct(nace_section_code, nace_2, nace_section)
+
+#Joining them together
+epa <- epa %>% 
+  left_join(nace_code, by= "nace_2")
+
+ecoinvent <- ecoinvent %>% 
+  left_join(nace_code, by="nace_2") 
+
+
+##Company Level Data
+TE_tilt_raw <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) %>% 
+  filter(EmployeesTotal <250) %>% 
+  filter(Revenue <= 50000000) 
+
+#Cleaning of NACE data and creation of sector_label 
+TE_tilt_oecd <- TE_tilt_raw %>%
+  mutate(
+    sector_label_cleaned = if_else(
+      nace_section == "multi-sector",
+      "multi_sector",
+      nace_section_list_adjusted
+    )
+  ) %>% 
+  mutate(sector_label_cleaned = str_remove_all(sector_label_cleaned, "\\[|\\]|\"")) %>% 
+  mutate(sector_label_cleaned = str_wrap(sector_label_cleaned, width = 25))
+```
+
+
+
+##03. CV auf Emission Factor per Sector - Variability Table: 1, Section 5.1
+Creating Table 1: Coefficient of variation of emission factors across used data sources by 1-digit NACE section
+
+```{r cv, echo=FALSE, warning=FALSE, message=FALSE}
+# Coefficient of Variation pro Sektor und Methode
+cv_summary_ecoinvent <- ecoinvent %>%
+  group_by(nace_section) %>% 
+  summarise(
+    Count_Ecoinvent = n_distinct(emission_factor_ecoinvent, na.rm = TRUE),
+    CV_Ecoinvent = sd(emission_factor_ecoinvent, na.rm = TRUE) / mean(emission_factor_ecoinvent, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    CV_Ecoinvent = round(CV_Ecoinvent, 2),
+    )
+
+cv_summary_oecd <- oecd %>%
+  group_by(nace_section) %>% 
+  summarise(
+    Count_oecd = n_distinct(emission_factor_oecd, na.rm = TRUE),
+    CV_oecd = ifelse(n() > 1,
+                 sd(emission_factor_oecd, na.rm = TRUE) / mean(emission_factor_oecd, na.rm = TRUE),
+                 0), 
+    .groups = "drop"
+  ) %>%
+  mutate(
+    CV_oecd = round(CV_oecd, 2)
+    )
+
+
+cv_summary_epa <- epa %>%
+  group_by(nace_section) %>% 
+  summarise(
+    Count_epa = n_distinct(emission_factor_epa, na.rm = TRUE),
+    CV_epa = sd(emission_factor_epa, na.rm = TRUE) / mean(emission_factor_epa, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    CV_epa = round(CV_epa, 2)
+    )
+
+# 2. Merge all summaries by nace_section
+cv_comparison <- cv_summary_ecoinvent %>%
+  full_join(cv_summary_oecd, by = "nace_section") %>%
+  full_join(cv_summary_epa, by = "nace_section")
+
+# 3. Calculate CV differences
+cv_comparison <- cv_comparison %>%
+  mutate(
+    CV_Diff_Ecoinvent_OECD = CV_Ecoinvent - CV_oecd,
+    CV_Diff_EPA_OECD = CV_epa - CV_oecd
+  ) %>%
+  mutate(across(starts_with("CV"), ~ round(.x, 2)))
+
+
+cv_comparison %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Coefficient of Variation by Sector and Method (Emission Factors)") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/05a_benchmark_tilt_sector_averages/Table-1-cv_emission_factors.tex")
+
+print(cv_comparison)
+
+```
+
+###04. Deep-dive of firm level dispersion - Figure 10 in Appendix 9.9.3
+
+Creating Figure 10: Firm - level dispersion in emission intensity per industry "A01 - Agriculture, fishing and forestry" in the Appendix
+--> also possible for other sectors as here indicated with sector C20. 
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#Select relevant columns
+TE_tilt <- TE_tilt_raw |> 
+  select(company_id, nace_section,
+         EmployeesTotal, Revenue, tilt_method_s1_TE_MEAN_tonnes, nace_2_list, tilt_method_s2_TE_MEAN_tonnes, tilt_method_s3_TE_MEAN_tonnes, oecd_s1_TE_MEAN_tonnes, oecd_s2_TE_MEAN_tonnes, oecd_s3_TE_MEAN_tonnes, epa_s1_TE_MEAN_tonnes, epa_s2_TE_MEAN_tonnes, epa_s3_TE_MEAN_tonnes) |> 
+  mutate(
+    tilt_method_s1_EF_MEAN_kg = (tilt_method_s1_TE_MEAN_tonnes/Revenue)*1000, 
+    tilt_method_s2_EF_MEAN_kg = (tilt_method_s2_TE_MEAN_tonnes/Revenue)*1000, 
+    tilt_method_s3_EF_MEAN_kg = (tilt_method_s3_TE_MEAN_tonnes/Revenue)*1000, 
+    tilt_method_EF_MEAN_kg = (tilt_method_s1_EF_MEAN_kg+tilt_method_s2_EF_MEAN_kg+tilt_method_s3_EF_MEAN_kg),
+    oecd_s1_EF_MEAN_kg = (oecd_s1_TE_MEAN_tonnes/Revenue)*1000, 
+    oecd_s2_EF_MEAN_kg = (oecd_s2_TE_MEAN_tonnes/Revenue)*1000, 
+    oecd_s3_EF_MEAN_kg = (oecd_s3_TE_MEAN_tonnes/Revenue)*1000, 
+    oecd_EF_MEAN_kg = (oecd_s1_EF_MEAN_kg+oecd_s2_EF_MEAN_kg+oecd_s3_EF_MEAN_kg),
+    epa_s1_EF_MEAN_kg = (epa_s1_TE_MEAN_tonnes/Revenue)*1000, 
+    epa_s2_EF_MEAN_kg = (epa_s2_TE_MEAN_tonnes/Revenue)*1000, 
+    epa_s3_EF_MEAN_kg = (epa_s3_TE_MEAN_tonnes/Revenue)*1000,
+    epa_EF_MEAN_kg = (epa_s1_EF_MEAN_kg+epa_s2_EF_MEAN_kg+epa_s3_EF_MEAN_kg)
+  )
+
+#Create subset of data
+# select single sections
+TE_tilt_single <- TE_tilt |> 
+  filter(!(nace_section == "multi-sector"))
+
+#03.2. Create relevant subsets
+#For orientation: List of NACE codes: https://nacecode.de/ or https://ec.europa.eu/eurostat/documents/3859598/5902521/KS-RA-07-015-EN.PDF.pdf/dd5443f5-b886-40e4-920d-9df03590ff91?t=1414781457000 
+#Illustrative selection (all other NACE codes also possible): 
+#- A01: Crop and animal production, hunting and related service activities 
+#- C20: Manufacture of chemicals and chemical products 
+
+tilt_a01 <- TE_tilt_single |> 
+  filter(nace_2_list == "A01")
+
+tilt_c20 <- TE_tilt_single |> 
+  filter(nace_2_list == "C20")
+
+```
+
+
+#04.1. Plot Emission Intensity Heterogeneity A01
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+##Round
+tilt_a01 <- tilt_a01 |> 
+  mutate(oecd_EF_MEAN_kg = round(oecd_EF_MEAN_kg, 8))
+
+##Prepare data for plotting 
+plot_long <- tilt_a01 %>%
+  select(
+    company_id,
+    tilt_method_EF_MEAN_kg,
+    epa_EF_MEAN_kg,
+    oecd_EF_MEAN_kg
+  ) %>%
+  pivot_longer(
+    cols = c(oecd_EF_MEAN_kg, epa_EF_MEAN_kg, tilt_method_EF_MEAN_kg),
+    names_to = "Method",
+    values_to = "EF"
+  ) %>%
+  mutate(
+    Method = recode(
+      Method,
+      oecd_EF_MEAN_kg = "OECD (sector average)",
+      epa_EF_MEAN_kg  = "EPA (product-category-level)",
+      tilt_method_EF_MEAN_kg = "tilt (product-level)"
+    ),
+    # enforce pyramid order: OECD top → Tilt bottom
+    Method = factor(
+      Method,
+      levels = c(
+        "tilt (product-level)",
+        "EPA (product-category-level)",
+        "OECD (sector average)"
+      )
+    )
+  ) %>%
+  filter(!is.na(EF), EF > 0)
+
+plot_bubbles <- plot_long %>%
+  count(Method, EF, name = "n_firms")
+
+p_granularity_a01 <- ggplot(
+  plot_bubbles,
+  aes(x = EF, y = Method, size = n_firms, colour = Method)
+) +
+  geom_point(alpha = 0.7) +
+
+  # 2) NO log scale
+  scale_x_continuous(
+    labels = label_comma(big.mark = ".", decimal.mark = ",")
+  ) +
+
+  # 3) Explicit size legend with bubbles for 1 and 50
+  scale_size_area(
+  max_size = 14,
+  breaks = c(1, 10, 30),
+  labels = c("1", "10", "30"),
+  limits = c(1, 80)   
+) +
+
+  
+  # 4) Custom colors
+  scale_colour_manual(
+    values = c(
+      "tilt (product-level)" = "indianred",    # pink
+      "OECD (sector average)" = "lightgray",
+      "EPA (product-category-level)"  = "steelblue"   # neon green
+    )
+  ) +
+
+  labs(
+  #  title = "Granularity of emission intensities per firm within NACE A01 – Crop and animal production, hunting and related service activities",
+  #  subtitle = "From sector averages (top) over product-category averages (middle) to product-specific estimates (bottom)",
+    x = "Emission intensity (kg CO2e per EUR revenue)",
+    y = NULL,
+   size = "Number of firms"
+  ) +
+  theme(
+    legend.position = "top",
+    legend.box = "vertical"
+  )
+
+p_granularity_a01
+
+
+unique(tilt_a01$oecd_EF_MEAN_kg)
+
+unique(format(tilt_a01$oecd_EF_MEAN_kg, digits = 20))
+
+
+
+# Save the plot
+ggsave(
+  filename = "02_output_data/05a_benchmark_tilt_sector_averages/Figure-10-granularity_plot_a01.pdf",
+  plot = p_granularity_a01,
+  width = 10, height = 6, dpi = 300
+)
+
+```
+
+
+
+#04.2 Another sample for heterogeinity within section C20
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+plot_long <- tilt_c20 %>%
+  select(
+    company_id,
+    tilt_method_EF_MEAN_kg,
+    epa_EF_MEAN_kg,
+    oecd_EF_MEAN_kg
+  ) %>%
+  pivot_longer(
+    cols = c(oecd_EF_MEAN_kg, epa_EF_MEAN_kg, tilt_method_EF_MEAN_kg),
+    names_to = "Method",
+    values_to = "EF"
+  ) %>%
+  mutate(
+    Method = recode(
+      Method,
+      oecd_EF_MEAN_kg = "OECD (sector average)",
+      epa_EF_MEAN_kg  = "EPA (product-category-level)",
+      tilt_method_EF_MEAN_kg = "tilt (product-level)"
+    ),
+    # enforce pyramid order: OECD top → Tilt bottom
+    Method = factor(
+      Method,
+      levels = c(
+        "tilt (product-level)",
+        "EPA (product-category-level)",
+        "OECD (sector average)"
+      )
+    )
+  ) %>%
+  filter(!is.na(EF), EF > 0)
+
+plot_bubbles <- plot_long %>%
+    mutate(EF = round(EF, 8)) %>%   # <- fixes floating point duplicates
+  count(Method, EF, name = "n_firms")
+
+p_granularity_c20 <- ggplot(
+  plot_bubbles,
+  aes(x = EF, y = Method, size = n_firms, colour = Method)
+) +
+  geom_point(alpha = 0.7) +
+
+  # 2) NO log scale
+  scale_x_continuous(
+    labels = label_comma(big.mark = ".", decimal.mark = ",")
+  ) +
+
+  # 3) Explicit size legend with bubbles for 1 and 50
+  scale_size_area(
+  max_size = 14,
+  breaks = c(1, 10, 30),
+  labels = c("1", "10", "30"),
+  limits = c(1, 80)   
+) +
+
+  
+  # 4) Custom colors
+  scale_colour_manual(
+    values = c(
+      "tilt (product-level)" = "indianred",    # pink
+      "OECD (sector average)" = "lightgray",
+      "EPA (product-category-level)"  = "steelblue"   # neon green
+    )
+  ) +
+
+  labs(
+   # title = "Number of firms sharing the same emission intensity",
+    #subtitle = "From sector averages (top) over product-category averages (middle) to product-specific estimates (bottom)",
+    x = "Emission intensity (kg CO2e per EUR revenue)",
+    y = NULL,
+    size = "Number of firms"
+  ) +
+  theme(
+    legend.position = "top",
+    legend.box = "vertical"
+  )
+
+p_granularity_c20
+
+
+# Save the plot
+ggsave(
+  filename = "02_output_data/05a_benchmark_tilt_sector_averages/Figure-10-alternative_granularity_plot_c20.pdf",
+  plot = p_granularity_c20,
+  width = 10, height = 6, dpi = 300
+)
+
+```
+
+
+
+
+##05. Scatter plot - Correlation - Figure 2
+We first examine a scatterplot of \textit{tilt}-based versus sector-based firm estimates following analysis of \cite{steubingHowCarbonFootprints2022}. If both approaches agree perfectly, all points would lie on the diagonal. Deviations from this line reflect firm-level heterogeneity captured by the \textit{tilt} method but not by sector averages. This generates Figure 2: Comparison of firm-level emissions based on the sector-based (OECD) emissions and product-based (tilt) emissions method. 
+
+```{r, warning=FALSE, message=FALSE}
+# Ensure no missing values in sector labels (even though they don't exists)
+TE_tilt_oecd <- TE_tilt_oecd %>% 
+  filter(
+    tilt_method_TE_MEAN_tonnes > 0,
+    tilt_method_TE_p95_tonnes > 0,
+    tilt_method_TE_p5_tonnes > 0,
+    oecd_TE_MEAN_tonnes > 0,
+    oecd_TE_p5_tonnes > 0,
+    oecd_TE_p95_tonnes > 0,
+    !is.na(sector_label_cleaned)
+  )
+
+sector_averages <- ggplot(TE_tilt_oecd, aes(x = oecd_TE_MEAN_tonnes, y = tilt_method_TE_MEAN_tonnes)) + 
+    geom_errorbar(aes(ymin = tilt_method_TE_p5_tonnes, ymax = tilt_method_TE_p95_tonnes),
+                  width = 0.1, alpha = 0.3, color = "gray60") + 
+    geom_errorbar(aes(xmin = oecd_TE_p5_tonnes, xmax = oecd_TE_p95_tonnes),
+                  width = 0.1, alpha = 0.3, color = "gray60") + 
+    geom_point(color = "steelblue", size = 1.5, alpha = 0.6) + 
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "black") + 
+    geom_smooth(method = "loess", se = FALSE, color = "black", size = 0.7) + 
+    scale_x_log10(labels = scales::comma) + 
+    scale_y_log10(labels = scales::comma) + 
+    labs(
+      x = "OECD-based firm-level emissions (log CO2e tonnes)",
+      y = "tilt-based firm-level emissions (log CO2e tonnes)"
+    )
+
+  ggsave(
+    filename = paste0("02_output_data/05a_benchmark_tilt_sector_averages/Figure-2-scatter_plot",".pdf"),
+    plot = sector_averages,
+    width = 8, height = 6, dpi = 300
+  )
+
+```
+
+
+
+
+## 06. Plot and Table: Bland–Altman Overall
+This generates Figure 11: Bland-Altman comparison of firm-level emissions estimates - sector-based (OECD) vs. product-based (tilt)
+Plus data for the text (5.6% lie outside of the LoA)
+
+
+```{r bland-altman-plot, echo=FALSE, warning=FALSE, message=FALSE}
+
+# --- 1. Compute log-transformed mean and difference ---
+
+TE_tilt_oecd <- TE_tilt_oecd %>%
+mutate(
+log_tilt = log(tilt_method_TE_MEAN_tonnes),
+log_oecd = log(oecd_TE_MEAN_tonnes),
+avg_log_emissions = (log_tilt + log_oecd) / 2,
+diff_log_emissions = log_tilt - log_oecd
+)
+
+# --- 2. Compute global Bland–Altman stats on log scale ---
+
+bias_log <- mean(TE_tilt_oecd$diff_log_emissions, na.rm = TRUE)
+sd_log <- sd(TE_tilt_oecd$diff_log_emissions, na.rm = TRUE)
+
+upper_limit_log <- bias_log + 1.96 * sd_log
+lower_limit_log <- bias_log - 1.96 * sd_log
+
+# --- 3. Outlier counting ---
+
+TE_outliers_log <- TE_tilt_oecd %>%
+filter(diff_log_emissions < lower_limit_log | diff_log_emissions > upper_limit_log)
+
+n_total_log <- nrow(TE_tilt_oecd)
+n_removed_log <- nrow(TE_outliers_log)
+share_removed_log <- round(100 * n_removed_log / n_total_log, 1)
+
+# --- 4. Summary table ---
+
+removed_summary_log <- tibble(
+`Total Companies` = n_total_log,
+`Removed as Outliers` = n_removed_log,
+`Share Removed (%)` = share_removed_log
+)
+
+# --- 5. Table output ---
+
+removed_summary_log %>%  
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Bland_Altman_all_test") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/05a_benchmark_tilt_sector_averages/Figure-11-in-numbers-Bland_Altman_all_test.tex")
+
+# --- 6. Plot: Bland–Altman on log scale ---
+
+ba_plot_log <- ggplot(TE_tilt_oecd, aes(x = avg_log_emissions, y = diff_log_emissions)) +
+geom_point(alpha = 0.5, size = 1.2, color = "gray30") +
+geom_hline(yintercept = bias_log, linetype = "dashed", color = "steelblue", linewidth = 1) +
+geom_hline(yintercept = upper_limit_log, linetype = "dotted", color = "indianred", linewidth = 0.8) +
+geom_hline(yintercept = lower_limit_log, linetype = "dotted", color = "indianred", linewidth = 0.8) +
+labs(
+#title = "Bland–Altman Plot (Log Scale)",
+#subtitle = "Comparison: Tilt vs OECD Emissions (log-transformed)",
+  x = "Average of log firm-level emissions of tilt- and OECD-based",
+  y = "Log difference in firm-level emissions of tilt and OECD"
+)
+
+
+# --- 7. Show Plot ---
+
+print(ba_plot_log)
+
+  ggsave(
+    filename = paste0("02_output_data/05a_benchmark_tilt_sector_averages/Figure-11-Bland_Altman_all_test",".pdf"),
+    plot = ba_plot_log,
+    width = 8, height = 6, dpi = 300
+  )
+
+
+```
+
+
+##07. Compute RelaDiff_f 
+If sector-based factors are calibrated to the same system boundaries,
+we expect $\overline{\mathrm{RelDiff}}$ to be close to zero, indicating
+broad portfolio-level consistency, while a large dispersion of
+$\mathrm{RelDiff}_f$ indicates substantial firm-level divergence from
+sector averages.
+
+This generates Figure 12: Distribution of relative differences between firm-level emission based on tilt and OECD by sector in the Appendix 9.3.2.
+
+```{r, warning=FALSE, message=FALSE}
+#Calculation of RelDif per company
+RelDif <- TE_tilt_oecd %>%
+  mutate(
+    RelDiff = (tilt_method_TE_MEAN_tonnes - oecd_TE_MEAN_tonnes) / oecd_TE_MEAN_tonnes
+  )
+
+# Summary statistics
+# Summary statistics per sector (now in %)
+summary_stats <- RelDif %>%
+  mutate(RelDiff = RelDiff * 100) %>%  # Convert to %
+  group_by(sector_label_cleaned) %>% 
+  summarise(
+    CorrelationPearson = cor(tilt_method_TE_MEAN_tonnes, oecd_TE_MEAN_tonnes, method = "pearson", use = "complete.obs"),
+    CorrelationSpearman = cor(tilt_method_TE_MEAN_tonnes, oecd_TE_MEAN_tonnes, method = "spearman", use = "complete.obs"),
+    MeanRelDiff = mean(RelDiff, na.rm = TRUE),
+    MedianRelDiff = median(RelDiff, na.rm = TRUE),
+    P25RelDiff = quantile(RelDiff, 0.25, na.rm = TRUE),
+    P75RelDiff = quantile(RelDiff, 0.75, na.rm = TRUE),
+    SDRelDiff = sd(RelDiff, na.rm = TRUE),
+    ShareAbove50 = mean(abs(RelDiff) > 50, na.rm = TRUE)  # now 50% instead of 0.5
+  )
+
+summary_stats <- summary_stats %>%
+  rename(
+    `Mean Rel. Diff. (%)` = MeanRelDiff,
+    `Median Rel. Diff. (%)` = MedianRelDiff,
+    `P25 Rel. Diff. (%)` = P25RelDiff,
+    `P75 Rel. Diff. (%)` = P75RelDiff,
+    `SD Rel. Diff. (%)` = SDRelDiff
+  ) %>%
+  mutate(across(
+    contains("Rel. Diff."),
+    ~ paste0(formatC(.x, format = "f", digits = 2), "\\%")
+  )) 
+
+summary_stats
+
+#Calculation of RelDif per company
+RelDif <- TE_tilt_oecd %>%
+  mutate(
+    RelDiff = (tilt_method_TE_MEAN_tonnes - oecd_TE_MEAN_tonnes) / oecd_TE_MEAN_tonnes
+  )
+
+# Summary statistics
+# Summary statistics for all sectors (now in %)
+summary_stats_all <- RelDif %>%
+  mutate(RelDiff = RelDiff * 100) %>%  # Convert to %
+  summarise(
+    CorrelationPearson = cor(tilt_method_TE_MEAN_tonnes, oecd_TE_MEAN_tonnes, method = "pearson", use = "complete.obs"),
+    CorrelationSpearman = cor(tilt_method_TE_MEAN_tonnes, oecd_TE_MEAN_tonnes, method = "spearman", use = "complete.obs"),
+    MeanRelDiff = mean(RelDiff, na.rm = TRUE),
+    MedianRelDiff = median(RelDiff, na.rm = TRUE),
+    P25RelDiff = quantile(RelDiff, 0.25, na.rm = TRUE),
+    P75RelDiff = quantile(RelDiff, 0.75, na.rm = TRUE),
+    SDRelDiff = sd(RelDiff, na.rm = TRUE),
+    ShareAbove50 = mean(abs(RelDiff) > 50, na.rm = TRUE)  # threshold in %
+  )
+
+summary_stats_all <- summary_stats_all %>%
+  rename(
+    `Mean Rel. Diff. (%)` = MeanRelDiff,
+    `Median Rel. Diff. (%)` = MedianRelDiff,
+    `P25 Rel. Diff. (%)` = P25RelDiff,
+    `P75 Rel. Diff. (%)` = P75RelDiff,
+    `SD Rel. Diff. (%)` = SDRelDiff
+  ) %>%
+  mutate(across(
+    contains("Rel. Diff."),
+    ~ paste0(formatC(.x, format = "f", digits = 2), "\\%")
+  )) 
+
+summary_stats_all
+
+# Save to your desired folder, e.g., 01_output_data
+
+summary_stats %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Relative Difference between ecoinvent vs. oecd") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/05a_benchmark_tilt_sector_averages/Figure-12-in-numbers-relative_differences_per_sector_ecoinvent_vs_oecd.tex")
+
+summary_stats_all %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "Relative Difference between ecoinvent vs. oecd") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/05a_benchmark_tilt_sector_averages/Figure-3-in-numbers-relative_differences_all_ecoinvent_vs_oecd.tex")
+
+# 1. Prepare Data (filter for better readability)
+RelDif_filtered <- RelDif %>%
+  filter(is.finite(RelDiff)) %>%
+  mutate(
+    RelDiff_pct = RelDiff * 100,
+    RelDiff_capped = pmax(pmin(RelDiff_pct, 1000), -1000)  # cap values at ±1000%
+  )
+
+# 2. Count number of firms per sector and add label
+sector_counts <- RelDif_filtered %>%
+  count(sector_label_cleaned, name = "n_firms") %>%
+  mutate(sector_label = paste0(sector_label_cleaned, " (n=", n_firms, ")"))
+
+# 3. Merge label back into main data
+RelDif_labeled <- RelDif_filtered %>%
+  left_join(sector_counts, by = "sector_label_cleaned")
+
+# 4. Boxplot with percentage values
+boxplot <- ggplot(RelDif_labeled, aes(y = reorder(sector_label, RelDiff_capped), x = RelDiff_capped)) +
+  geom_boxplot(outlier.shape = 1, outlier.size = 1, fill = "steelblue", color = "black") +
+  geom_vline(xintercept = 0, color = "indianred", size = 0.7) +
+  geom_vline(xintercept = -100, color = "grey60", linetype = "dashed") +
+  geom_vline(xintercept = 100, color = "grey60", linetype = "dashed") +
+  scale_x_continuous(
+    limits = c(-500, 1000),
+    breaks = seq(-500, 1000, 100),
+    labels = function(x) paste0(x, "%")
+  ) +
+  labs(
+    x = "Relative difference in firm-level emissions (tilt relative to OECD, %)",
+    y = NULL
+  ) +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 10),
+    plot.title = element_text(face = "bold")
+  )
+
+# Save updated boxplot
+ggsave(
+  "02_output_data/05a_benchmark_tilt_sector_averages/Figure-12-boxplot_rel_differences.pdf",
+  boxplot,
+  width = 10,
+  height = 12,
+  dpi = 300
+)
+
+# Show plot
+print(boxplot)
+
+
+```
+
+##Ploting Relative differenes 
+
+This generates Figure 3 in Section 5.1. 
+
+```{r, warning=FALSE, message=FALSE}
+
+# --- 1. Prepare sorted data with firm index ---
+rel_diff_sorted <- RelDif %>%
+  filter(is.finite(RelDiff), !is.na(RelDiff)) %>%
+  arrange(RelDiff) %>%
+  mutate(Firm_ID = row_number())
+
+# --- 2. Calculate category shares for annotation ---
+n_total <- nrow(rel_diff_sorted)
+
+n_lower   <- sum(rel_diff_sorted$RelDiff < 0)
+n_between <- sum(rel_diff_sorted$RelDiff >= 0 & rel_diff_sorted$RelDiff <= 2)  # 0% to 200% higher
+n_higher  <- sum(rel_diff_sorted$RelDiff > 2)
+
+share_lower   <- percent(n_lower / n_total, accuracy = 1)
+share_between <- percent(n_between / n_total, accuracy = 1)
+share_higher  <- percent(n_higher / n_total, accuracy = 1)
+
+# --- 3. Plot settings (zoom only; do NOT drop data) ---
+y_min <- -1   # -100%
+y_max <- 10   # +1000%
+
+diagram <- ggplot(rel_diff_sorted, aes(x = Firm_ID, y = RelDiff)) +
+
+  # --- Background zones ---
+  annotate("rect", xmin = 0, xmax = n_total, ymin = y_min, ymax = 0,
+           fill = "steelblue", alpha = 0.25) +
+  annotate("rect", xmin = 0, xmax = n_total, ymin = 0, ymax = 2,
+           fill = "seagreen", alpha = 0.25) +
+  annotate("rect", xmin = 0, xmax = n_total, ymin = 2, ymax = y_max,
+           fill = "indianred", alpha = 0.20) +
+
+  # --- Relative difference curve ---
+  geom_line(color = "black", linewidth = 0.6) +
+
+  # --- Text annotations ---
+  annotate("text", x = n_total * 0.12, y = y_min + 0.3,
+           label = paste0("tilt lower (", share_lower," of all firms)"),
+           color = "blue", size = 4, hjust = 0) +
+
+  annotate("text", x = n_total * 0.25, y = 1.6,
+           label = paste0("tilt 0–200% higher (", share_between, " of all firms)"),
+           color = "darkgreen", size = 4, hjust = 0) +
+
+  annotate("text", x = n_total * 0.55, y = y_max - 0.4,
+           label = paste0("tilt >200% higher (", share_higher, " of all firms)"),
+           color = "darkred", size = 4, hjust = 0) +
+  # --- Axes & labels ---
+  labs(
+    x = "Firms (sorted by relative difference)",
+    y = "Relative difference in firm-level emissions (tilt relative to OECD, %)"
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 1),
+   # breaks = c(-1, -0.5, 0, 1, 2, 5, 10)
+  ) +
+  coord_cartesian(ylim = c(y_min, y_max)) +
+  theme(
+    panel.grid.minor = element_blank()
+  )
+
+print(diagram)
+# -------------------------------
+# 4. Save
+# -------------------------------
+ggsave(
+  "02_output_data/05a_benchmark_tilt_sector_averages/Figure-3-relative_differences_plot.pdf",
+  diagram,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+
+```
+
+
+##08. Create comparison between firm data and OECD
+This generates Table 9: Total greenhouse gas emissions of German SMEs: OECD vs. tilt in the Appendix 9.3.2. 
+
+```{r, warning=FALSE, message=FALSE}
+#Load in the data
+
+# firm level data
+TE_tilt_raw <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) %>% 
+  filter(EmployeesTotal <250) %>% 
+  filter(Revenue <= 50000000) %>% 
+  select(company_id, tilt_method_lca_source, nace_section_list_adjusted, nace_section, Revenue, tilt_method_TE_MEAN_tonnes, tilt_method_s1_TE_MEAN_tonnes, tilt_method_s2_TE_MEAN_tonnes, tilt_method_s3_TE_MEAN_tonnes, tilt_method_reduction_potential_TE_MEAN_tonnes)
+
+
+# weights per firm
+sample_weights <- read_csv(here("02_output_data/02_stratification/sample_with_weights.csv"))
+
+# weights per stratum
+weights_per_stratum <- read_csv(here("02_output_data/02_stratification/weights_per_stratum_percentages.csv"))
+
+# oecd data
+oecd_emissions_raw <- read_csv(here("01_input_data/03_activity_level_data/02_oecd_data/oecd_emission_factors.csv"))
+
+# sector mapper
+sector_mapper <- read_csv(here("01_input_data/04_nace_name_mapper/nace_section-code_section-name_mapper.csv")) |> 
+  select(nace_section, nace_section_list) |> 
+  distinct() |> 
+  arrange(nace_section)
+
+```
+
+
+```{r}
+##Prep the data
+#colnames(TE_tilt_raw)
+
+TE_tilt <- TE_tilt_raw %>%
+  mutate(
+    sector_label = nace_section_list_adjusted) 
+
+# map section letters
+TE_tilt <- TE_tilt |> 
+  left_join(sector_mapper, by = c("nace_section_list_adjusted" = "nace_section_list", "nace_section"))
+
+
+# create reduction potential share
+TE_tilt <- TE_tilt |> 
+  mutate(reduction_potential_share =
+           tilt_method_reduction_potential_TE_MEAN_tonnes/tilt_method_TE_MEAN_tonnes)
+
+summary(TE_tilt$tilt_method_TE_MEAN_tonnes)
+summary(TE_tilt$tilt_method_reduction_potential_TE_MEAN_tonnes)
+summary(TE_tilt$reduction_potential_share)
+
+#02.3. Join weights to firm data
+
+TE_tilt <- TE_tilt |> 
+  left_join(select(sample_weights, company_id, weight), by = "company_id")
+
+##03. Sums of revenue & emissions per sector of firms
+
+# Weight firm data
+
+
+TE_tilt_weighted <- TE_tilt |> 
+  mutate(
+    total_emissions_weighted = tilt_method_TE_MEAN_tonnes*weight,
+    total_revenue_weighted = Revenue*weight, 
+    total_s1_weighted = tilt_method_s1_TE_MEAN_tonnes*weight, 
+    total_s2_weighted = tilt_method_s2_TE_MEAN_tonnes*weight, 
+    total_s3_weighted = tilt_method_s3_TE_MEAN_tonnes*weight
+  ) 
+
+#Sum emissions per sector letter
+
+company_emissions_by_sector <- TE_tilt_weighted %>%
+  filter(!(nace_section == "multi-sector")) |> 
+  group_by(nace_section) |> 
+  summarise(
+    total_company_emissions = sum(total_emissions_weighted, na.rm = TRUE),
+    total_company_s1 = sum(total_s1_weighted, na.rm = TRUE), 
+    total_company_s2 = sum(total_s2_weighted, na.rm = TRUE), 
+    total_company_s3 = sum(total_s3_weighted, na.rm = TRUE), 
+    .groups = "drop"
+  ) |> 
+  mutate(
+    nace_section = as.character(nace_section)
+  )
+
+## 04. Prep OECD Data
+# create section letter column (contains only first letter, because second letter is "T" and stands for "to")
+oecd_emissions <- oecd_emissions_raw |>
+  mutate(
+    nace_section = str_extract(activity, "[A-Z]")
+  ) |> 
+  select(origin_area, activity, time_period, S1, S2, S3U, total_s1_s2_s3u, prod_value, nace_section)
+
+# note: OECD emissions are displayed in million kg, but we want to show them in tonnes, i.e. divide by 1,000 (conversion to tons) and multiply with 1,000,000 (from millions to normal count)
+# multiply emissions & prod with 1,000,000 (because they are in million kg)
+oecd_emissions <- oecd_emissions |> 
+  mutate(
+    total_s1_s2_s3u = total_s1_s2_s3u * 1000000 / 1000, 
+    S1 = S1* 1000000 / 1000, 
+    S2 = S2* 1000000 / 1000, 
+    S3U = S3U* 1000000 / 1000
+  )
+
+oecd_emissions |> summarise(total_emissions = sum(total_s1_s2_s3u))
+
+#04.1. Sum emissions per sector letter
+oecd_emissions_by_sector <- oecd_emissions %>%
+  group_by(nace_section) |> 
+  summarise(
+    total_oecd_emissions = sum(total_s1_s2_s3u, na.rm = TRUE),
+    total_oecd_s1 = sum(S1, na.rm = TRUE), 
+    total_oecd_s2 = sum(S2, na.rm = TRUE), 
+    total_oecd_s3 = sum(S3U, na.rm = TRUE),
+    .groups = "drop"
+  ) |> 
+  mutate(
+    nace_section = as.character(nace_section)
+  )
+```
+
+
+```{r}
+#OECD vs. tilt comparison
+# join tables and clean
+comparison_emissions <- oecd_emissions_by_sector |> 
+  left_join(company_emissions_by_sector, by = "nace_section") |> 
+  filter(total_company_emissions > 0) |>
+  mutate(
+    share_of_tilt_to_oecd_emissions = (total_company_emissions/total_oecd_emissions)
+  )
+
+# add totals
+totals <- comparison_emissions |>
+  summarise(
+    total_oecd = sum(total_oecd_emissions, na.rm = TRUE),
+    total_company = sum(total_company_emissions, na.rm = TRUE)
+  )
+
+totals %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "OECD vs. tilt totals comparison") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/05a_benchmark_tilt_sector_averages/Table-9-total_oecd_tilt_comparison.tex")
+
+# add share columsn
+comparison_emissions <- comparison_emissions |>
+  mutate(
+    share_oecd_emissions =
+      total_oecd_emissions / totals$total_oecd,
+    share_company_emissions =
+      total_company_emissions / totals$total_company
+  )
+
+colnames(comparison_emissions)
+
+comparison_emissions <- comparison_emissions %>%
+  bind_rows(
+    comparison_emissions %>%
+      summarise(
+        across(
+          where(is.numeric) & !matches("^share_of_tilt_to_oecd_emissions$"),
+          sum,
+          na.rm = TRUE
+        ),
+        share_of_tilt_to_oecd_emissions = NA_real_
+      ) %>%
+      mutate(nace_section = "Total") %>%
+      select(nace_section, everything())
+  )
+
+colnames(comparison_emissions)
+
+comparison_emissions <- comparison_emissions |> 
+  rename(total_tilt_emissions = total_company_emissions, 
+         total_tilt_s1 = total_company_s1, 
+         total_tilt_s2 = total_company_s2, 
+         total_tilt_s3 = total_company_s3, 
+         share_tilt_emissions = share_company_emissions
+  )
+
+comparison_emissions %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, caption = "OECD vs. tilt totals comparison") %>%
+  kable_styling(latex_options = "scale_down") %>%
+  save_kable("02_output_data/05a_benchmark_tilt_sector_averages/Table-9-additions-scope1-3_shares_oecd_tilt_comparison.tex")
+
+
+```
+

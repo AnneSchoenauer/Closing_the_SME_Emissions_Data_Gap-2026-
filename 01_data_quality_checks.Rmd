@@ -1,0 +1,351 @@
+---
+title: "01_data_quality_checks"
+author: "Anne Schoenauer
+date: "2025-02-13"
+output: html_document
+---
+
+Note: This script requires licensed data from ecoinvent and therefore cannot be executed using the publicly available anonymized dataset. The code is provided for transparency only.
+The code does not produce any figures or tables and is included solely for transparency and data quality verification.
+
+#DESCRIPTION
+## Overview of the analysis workflow
+This script prepares, validates, and checks consistency of firm-level emissions and reduction potential data produced in the tilt pipeline. The workflow consists of four main steps:
+
+### 1. Loading required libraries and setting plotting defaults
+All necessary R packages for data handling, cleaning, visualization, and exporting results are loaded. A consistent plotting theme and color scales are also defined to ensure uniform visualization outputs across the analysis.
+
+### 2. Loading input datasets
+Multiple datasets are imported, including:
+
+- Firm-level emissions results,
+- Product-level company matching results,
+- Activity-level emissions datasets (Ecoinvent, EPA, OECD),
+- tilt activity-level data,
+- Final firm-level climate action and reduction potential outputs.
+
+Company identifiers are standardized to ensure consistent joins across datasets.
+
+### 3. Unit tests and data quality checks
+Several validation checks are applied to ensure logical consistency and data quality:
+
+- Identification of companies with zero or missing emissions.
+- Verification that Scope 1 + Scope 2 + Scope 3 emissions equal total emissions.
+- Checking that mean emissions lie within the reported 5th–95th percentile interval.
+- Ensuring uncertainty collapses when only one product is matched (5th–95th percentile interval = total emissions).
+- Ensuring emission reduction potential does not exceed total emissions.
+- Verifying that reduction components sum to total reduction potential.
+- Checking consistency between Scope 2 emissions and related reduction potentials (energy related climate actions such as solar and heat pump).
+- Identifying activity records missing NACE classifications.
+
+### 4. Export of validation results
+Companies or records failing validation checks are exported as CSV files for inspection and potential correction.
+
+Overall, this script serves as a **data validation and quality assurance layer**, ensuring consistency and integrity of emissions and reduction potential estimates before further analysis or reporting.
+
+
+
+#CODE STARTS
+##01 Libraries
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(readr)
+library(here)
+library(dplyr)
+library(readxl)
+library(janitor)
+library(tidyr)
+library(purrr)
+library(moments)
+library(ggplot2)
+library(scales)
+library(knitr)
+library(kableExtra)
+library(tibble)
+library(writexl)
+
+# Set consistent plot theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+
+# Optional: define viridis-based color scales (for consistency)
+scale_color_viridis_d <- function(...) scale_color_viridis(discrete = TRUE, option = "D", ...)
+scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option = "D", ...)
+
+```
+
+##02. Data
+Load data prepped by Paul with output data
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+#Read in all the data
+company_raw <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) |> 
+  mutate(
+    company_id = as.character(company_id)
+    )
+
+company_product <- read_csv(here("01_input_data/02_product_level_data/tilt_related_company_product_level_results_anon.csv")) 
+  
+ecoinvent <- read_csv(here("01_input_data/03_activity_level_data/03_ecoinvent_data/ecoinvent_activity_level.csv")) 
+
+epa <- read_csv(here("01_input_data/03_activity_level_data/04_epa_data/epa_activity_level.csv")) 
+
+oecd <- read_csv(here("01_input_data/03_activity_level_data/02_oecd_data/oecd_activity_level.csv"))
+
+lca <- read_csv(here("01_input_data/03_activity_level_data/01_tilt_data/tilt_activity_level.csv"))
+
+##Create data to test emission reduction potential and scope 1-3 specifically
+climate_actions <- company_raw %>% 
+  select(c(company_id, tilt_method_s2_TE_MEAN_tonnes, reduction_potential_ab2_TE_MEAN_tonnes, reduction_potential_re1_TE_MEAN_tonnes, reduction_potential_re4_TE_MEAN_tonnes, tilt_method_reduction_potential_TE_MEAN_tonnes)) |> 
+  mutate(
+    company_id = as.character(company_id)
+  )
+
+```
+
+#03. Unit tests and data quality tests
+#03.01. Test if there are null total emmissions
+```{r Null, echo=FALSE, warning=FALSE, message=FALSE}
+#filter the ones that have tilt_method_TE_MEAN_Tonnes == 0
+filtered_companies <- company_raw %>%
+  filter(tilt_method_TE_MEAN_tonnes == 0) 
+write_csv(filtered_companies, here("02_output_data", "01_data_quality_checks", "companies_with_NULL_TE.csv"))
+```
+
+#03.02. Test if all scope 1,2,3 add up to tilt_method_TE_MEAN_tonnes --> S1+S2+S3 = TE
+```{r Scope 1-3, echo=FALSE, warning=FALSE, message=FALSE}
+##tilt
+# Create a new column that checks if the sum of scopes equals the total emissions
+Scope_1_3 <- company_raw %>%
+  mutate(
+    scope_sum = tilt_method_s1_TE_MEAN_tonnes + tilt_method_s2_TE_MEAN_tonnes + tilt_method_s3_TE_MEAN_tonnes,
+    is_equal = abs(scope_sum - tilt_method_TE_MEAN_tonnes) < 1e-6  # using a small tolerance
+  )
+
+# Count how many rows match
+Scope_1_3_test <- Scope_1_3 %>%
+  summarise(
+    total_rows = n(),
+    matching = sum(is_equal, na.rm = TRUE),
+    not_matching = sum(!is_equal, na.rm = TRUE),
+    share_matching = round(mean(is_equal, na.rm = TRUE) * 100, 2)
+  )
+
+# Filter out companies where it does NOT match
+non_matching_companies <- Scope_1_3 %>%
+  filter(!is_equal) %>% 
+  select(company_id, tilt_method_s1_TE_MEAN_tonnes, tilt_method_s2_TE_MEAN_tonnes, tilt_method_s3_TE_MEAN_tonnes, scope_sum, tilt_method_TE_MEAN_tonnes, is_equal)
+
+# Optional: save to CSV
+write.csv(non_matching_companies, "02_output_data/01_data_quality_checks/non_matching_scope_sum.csv", row.names = FALSE)
+
+
+##epa
+Scope_1_3_epa <- company_raw %>%
+  mutate(
+    scope_sum = epa_s1_TE_MEAN_tonnes + epa_s2_TE_MEAN_tonnes + epa_s3_TE_MEAN_tonnes,
+    is_equal = abs(scope_sum - epa_TE_MEAN_tonnes) < 1e-6   # using a small tolerance
+  )
+
+# Count how many rows match
+Scope_1_3_test_epa <- Scope_1_3_epa %>%
+  summarise(
+    total_rows = n(),
+    matching = sum(is_equal, na.rm = TRUE),
+    not_matching = sum(!is_equal, na.rm = TRUE),
+    share_matching = round(mean(is_equal, na.rm = TRUE) * 100, 2)
+  )
+
+# Filter out companies where it does NOT match
+non_matching_companies_epa <- Scope_1_3_epa %>%
+  filter(!is_equal) %>% 
+  select(company_id,  epa_s1_TE_MEAN_tonnes, epa_s2_TE_MEAN_tonnes, epa_s3_TE_MEAN_tonnes, scope_sum, tilt_method_TE_MEAN_tonnes, is_equal)
+
+# Optional: save to CSV
+write.csv(non_matching_companies_epa, "02_output_data/01_data_quality_checks/non_matching_scope_sum_epa.csv", row.names = FALSE)
+
+##oecd
+Scope_1_3_oecd <- company_raw %>%
+  mutate(
+    scope_sum = oecd_s1_TE_MEAN_tonnes + oecd_s2_TE_MEAN_tonnes + oecd_s3_TE_MEAN_tonnes,
+    is_equal = abs(scope_sum - oecd_TE_MEAN_tonnes) < 1e-6  # using a small tolerance
+  )
+
+# Count how many rows match
+Scope_1_3_test_oecd <- Scope_1_3_oecd %>%
+  summarise(
+    total_rows = n(),
+    matching = sum(is_equal, na.rm = TRUE),
+    not_matching = sum(!is_equal, na.rm = TRUE),
+    share_matching = round(mean(is_equal, na.rm = TRUE) * 100, 2)
+  )
+
+# Filter out companies where it does NOT match
+non_matching_companies_oecd <- Scope_1_3_oecd %>%
+  filter(!is_equal) %>% 
+  select(company_id,  oecd_s1_TE_MEAN_tonnes, oecd_s2_TE_MEAN_tonnes, oecd_s3_TE_MEAN_tonnes, scope_sum, oecd_TE_MEAN_tonnes, is_equal)
+
+# Optional: save to CSV
+write.csv(non_matching_companies_oecd, "02_output_data/01_data_quality_checks/non_matching_scope_sum_oecd.csv", row.names = FALSE)
+```
+
+#03.03. Test if the mean is in between of the percentiles
+```{r mean between 5th and 95th, echo=FALSE, warning=FALSE, message=FALSE}
+#mean between 5th and 95th percentile
+#testing it for tilt
+tolerance <- 1e-6
+test_interval <- company_raw %>%
+  mutate(
+    ci_consistent = (tilt_method_TE_p5_tonnes <= tilt_method_TE_MEAN_tonnes + tolerance) &
+                    (tilt_method_TE_MEAN_tonnes <= tilt_method_TE_p95_tonnes + tolerance)
+  )
+
+filtered_companies_test_interval <- test_interval %>%
+  filter(!ci_consistent) %>% 
+  select(company_id, tilt_method_TE_p5_tonnes, tilt_method_TE_MEAN_tonnes, tilt_method_TE_p95_tonnes) %>% 
+  filter(!(TRUE))
+
+write.csv(filtered_companies_test_interval, "02_output_data/01_data_quality_checks/interval_tilt.csv", row.names = FALSE)
+
+
+#testing it for OECD
+test_interval_OECD <- company_raw %>%
+  mutate(
+    ci_consistent = (oecd_TE_p5_tonnes <= oecd_TE_MEAN_tonnes + tolerance) &
+                    (oecd_TE_MEAN_tonnes <= oecd_TE_p95_tonnes + tolerance)
+  )
+
+filtered_companies_test_interval_oecd <- test_interval_OECD %>%
+  filter(!ci_consistent) %>% 
+  select(company_id, oecd_TE_p5_tonnes, oecd_TE_MEAN_tonnes, oecd_TE_p95_tonnes) %>% 
+  filter(!(TRUE))
+
+write.csv(filtered_companies_test_interval_oecd, "02_output_data/01_data_quality_checks/interval_oecd.csv", row.names = FALSE)
+
+
+#testing it for EPA
+test_interval_epa <- company_raw %>%
+  mutate(
+    ci_consistent = (epa_TE_p5_tonnes <= epa_TE_MEAN_tonnes + tolerance) &
+                    (epa_TE_MEAN_tonnes <= epa_TE_p95_tonnes + tolerance)
+  )
+
+filtered_companies_test_interval_epa <- test_interval_epa %>%
+  filter(!ci_consistent) %>% 
+  select(company_id, epa_TE_p5_tonnes, epa_TE_MEAN_tonnes, epa_TE_p95_tonnes) %>% 
+  filter(!(TRUE))
+
+write.csv(filtered_companies_test_interval_epa, "02_output_data/01_data_quality_checks/interval_epa.csv", row.names = FALSE)
+```
+
+##03.04 Test if the 5th and 95th percentiles are the same as the mean if the product number equals 1 (no uncertainty if only 1 product)
+```{r uncertainty, echo=FALSE, warning=FALSE, message=FALSE}
+#If Product = 1 then no uncertainty
+filtered_inconsistent_products <- company_raw %>%
+  filter(number_of_products_matched == 1) %>%
+  mutate(
+    check_equal = tilt_method_TE_p5_tonnes == tilt_method_TE_MEAN_tonnes &
+                  tilt_method_TE_MEAN_tonnes == tilt_method_TE_p95_tonnes
+  ) %>%
+  filter(!check_equal)
+
+write_csv(filtered_inconsistent_products, here("02_output_data", "01_data_quality_checks", "inconsistent_products.csv"))
+```
+
+
+#03.05. Testing if the emission reduction potential is <= Total emissions
+```{r emission_reduction_potential small/equal than total emissions, echo=FALSE, warning=FALSE, message=FALSE}
+filtered_companies_fail_ERP_test <-
+  climate_actions %>%
+  select(
+    company_id,
+    tilt_method_reduction_potential_TE_MEAN_tonnes
+  ) %>%
+  left_join(
+    company_raw %>%
+      select(
+        company_id,
+        tilt_method_TE_MEAN_tonnes
+      ),
+    by = "company_id"
+  ) %>%
+  mutate(
+    reduction_logical =
+      tilt_method_reduction_potential_TE_MEAN_tonnes <=
+      tilt_method_TE_MEAN_tonnes
+  ) %>%
+  filter(!reduction_logical)
+
+write.csv(filtered_companies_fail_ERP_test, "02_output_data/01_data_quality_checks/emission_reduction_potential_bigger_than_emissions.csv", row.names = FALSE)
+```
+
+#03.06. Testing if all climate actions (AB2 = efficient machinery, RE1 = solar panels, RE4= Heat pumps) equal total emission reduction potentail 
+```{r emission_reduction_potential, echo=FALSE, warning=FALSE, message=FALSE}
+#AB2 + RE1 + RE4 = ERP
+sum_ERP_test <- company_raw %>%
+  mutate(
+    reduction_potential_sum = reduction_potential_ab2_TE_MEAN_tonnes +
+                              reduction_potential_re1_TE_MEAN_tonnes +
+                              reduction_potential_re4_TE_MEAN_tonnes,
+
+    reduction_consistent = abs(reduction_potential_sum - tilt_method_reduction_potential_TE_MEAN_tonnes) < 1e-6
+  )
+
+filtered_companies_fail_sum_ERP_test <- sum_ERP_test %>%
+  filter(!reduction_consistent) %>% 
+  select(company_id, reduction_potential_ab2_TE_MEAN_tonnes, reduction_potential_re1_TE_MEAN_tonnes, reduction_potential_re4_TE_MEAN_tonnes,
+         tilt_method_reduction_potential_TE_MEAN_tonnes) %>% 
+  mutate(across(where(is.numeric), ~ format(.x, scientific = FALSE)))
+
+write_csv(filtered_companies_fail_sum_ERP_test, here("02_output_data", "01_data_quality_checks", "companies_with_sum_of_climate_action_unequal_total_reduction_potential.csv"))
+```
+
+
+#03.07.  Test if the energy related climate actions (RE1 and RE4) are not higher than scope 2
+```{r emission_reduction_potential, echo=FALSE, warning=FALSE, message=FALSE}
+##Filter out reduction_potential_ab2_TE_MEAN_tonnes > 0 -->
+sum_S2_test <- climate_actions %>% 
+  filter(!(reduction_potential_ab2_TE_MEAN_tonnes > 0)) %>% 
+  mutate(
+    inconsistent =  
+      tilt_method_reduction_potential_TE_MEAN_tonnes >
+      tilt_method_s2_TE_MEAN_tonnes + tolerance
+  ) %>% 
+  filter(inconsistent == TRUE) %>% 
+  select(company_id, reduction_potential_ab2_TE_MEAN_tonnes, reduction_potential_re1_TE_MEAN_tonnes, reduction_potential_re4_TE_MEAN_tonnes,
+         tilt_method_reduction_potential_TE_MEAN_tonnes, tilt_method_s2_TE_MEAN_tonnes) %>% 
+  mutate(across(where(is.numeric), ~ format(.x, scientific = FALSE)))
+
+write_csv(sum_S2_test, here("02_output_data", "01_data_quality_checks", "sum_s2_inconsistent.csv"))
+```
+
+
+##03.08 Test if all LCA/sectors have a NACE code
+```{r NACE codes, echo=FALSE, warning=FALSE, message=FALSE}
+##Ecoinvent no NACE code
+ecoinvent_NA <- ecoinvent%>% 
+  filter(nace_2_list == "[]")
+
+write_csv(ecoinvent_NA, here("02_output_data", "01_data_quality_checks","ecoinvent_with_no_NACE_code.csv"))
+
+##EPA no NACE code
+epa_NA <- epa %>% 
+  filter(nace_2_list == "[]")
+
+write_csv(ecoinvent_NA, here("02_output_data","01_data_quality_checks", "epa_with_no_NACE_code.csv"))
+
+##OECD no NACE code
+oecd_NA <- oecd %>% 
+  filter(nace_2 == "[]")
+
+write_csv(ecoinvent_NA, here("02_output_data", "01_data_quality_checks","oecd_with_no_NACE_code.csv"))
+```

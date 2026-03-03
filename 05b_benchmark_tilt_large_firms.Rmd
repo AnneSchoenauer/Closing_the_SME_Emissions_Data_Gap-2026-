@@ -1,0 +1,346 @@
+---
+title: "05b_benchmark_tilt_large_firms"
+author: "Anne Schoenauer"
+date: "2025-02-13"
+output: html_document
+---
+
+Note: Through the matching with Dataland the names of some Infobel data becomes apparent - we therefore do not publish the mapper between Dataland and Infobel. Thus this analysis only serve for transparency and cannot be re-run.
+
+##Overview of the analysis workflow
+This R Markdown benchmarks tilt-based firm-level emissions estimates against reported emissions of large firms from Dataland. The analysis evaluates consistency at the firm and aggregate level, with explicit consideration of uncertainty intervals, and documents how closely tilt aligns with externally reported corporate emissions.
+
+##01. Libraries
+All required R packages for data handling, merging, table export, and visualization are loaded. A consistent plotting theme and color scales are defined to ensure uniform styling across outputs.
+
+##02. Loading and preparing data
+Firm-level tilt results are imported and cleaned, including total and Scope 1–3 emissions (mean, 5th, and 95th percentiles), revenue, and sector labels. Firms with known matching issues are excluded. Reported emissions and revenue data from Dataland are then loaded, filtered by data-quality flags, and aggregated to total emissions. A mapping file is used to link Dataland records to tilt firms, keeping the most recent reporting year per company, and both datasets are merged into a joint comparison dataset.
+
+##03. Relative differences, correlations, and uncertainty coverage
+For each matched firm, the script computes relative differences between tilt and reported emissions (total and by scope) as well as revenue differences. It also checks whether reported emissions lie within tilt’s 5th–95th percentile uncertainty intervals. At the aggregate level, correlations, confidence-interval coverage rates, absolute and relative differences in emissions and revenue, and scope-level contributions to total differences are calculated. These results are summarized and exported as Table 2 in Section 5.2.
+
+##04. Firm-level case study of large firms
+The script generates a detailed firm-level comparison table reporting tilt versus Dataland emissions and revenue for each large firm, together with indicators showing whether reported values fall within tilt uncertainty intervals. This output is exported as Table 10 for inclusion in the appendix.
+
+Overall, this script provides a large-firm validation and benchmarking exercise, assessing the alignment of tilt-based emissions estimates with reported corporate data while explicitly accounting for uncertainty.
+
+
+##01. Libraries
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(readr)
+library(here)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(ggforce)
+library(latex2exp)
+library(knitr)
+library(kableExtra)
+library(viridis)
+library(ggplot2)
+library(showtext)
+library(readxl)
+library(here)
+
+
+# Set a clean and scientific base theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom", 
+      
+    )
+)
+
+# Install once if needed
+# Use a color scale from viridis (for consistency and accessibility)
+scale_color_viridis_d <- function(...) scale_color_viridis(discrete = TRUE, option = "D", ...)
+scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option = "D", ...)
+
+
+```
+
+##02. Loading in data
+We load in firm-level data and select total emissions (mean, 95th and 5th uncertainty range). We also load in the dataland data. 
+
+```{r, warning=FALSE, message=FALSE}
+
+TE_tilt <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) 
+#Cleaning of NACE data and creation of sector_label 
+TE_tilt <- TE_tilt %>%
+  mutate(
+    sector_label_cleaned = if_else(
+      nace_section == "multi-sector",
+      "multi_sector",
+      nace_section_list_adjusted
+    )
+  ) %>% 
+  select(company_id, tilt_method_lca_source, Revenue, tilt_method_TE_MEAN_tonnes, tilt_method_TE_SD_tonnes, tilt_method_TE_p95_tonnes, tilt_method_TE_p5_tonnes, tilt_method_s1_TE_MEAN_tonnes, tilt_method_s1_TE_p5_tonnes, tilt_method_s1_TE_p95_tonnes,  tilt_method_s2_TE_MEAN_tonnes, tilt_method_s2_TE_p5_tonnes, tilt_method_s2_TE_p95_tonnes, tilt_method_s3_TE_MEAN_tonnes, tilt_method_s3_TE_p5_tonnes, tilt_method_s3_TE_p95_tonnes, sector_label_cleaned, number_of_products_matched, Dataland, ) %>%   
+  filter(!(company_id == "F004748")) %>% #Amprion wrong matches and electricity
+  filter(!(company_id == "F004785")) %>% #MTU Aero (wrong matches)
+  filter(!(company_id == "F005826")) %>% #Eurogrid wrong match and electricity
+  filter(!(company_id == "F003533")) %>% #Allianz wrong matches    
+  filter(!(company_id == "F002000")) %>% #EON electricity
+  filter(!(company_id == "F002380")) #%>%# Vonova wrong matches
+
+
+TE_tilt <- TE_tilt %>%
+  mutate(
+    # Default values (no adjustment)
+    scope1_tilt_adj_mean = tilt_method_s1_TE_MEAN_tonnes,
+    scope2_tilt_adj_mean = tilt_method_s2_TE_MEAN_tonnes,
+    scope3_tilt_adj_mean = tilt_method_s3_TE_MEAN_tonnes,
+
+    scope1_tilt_adj_p5 = tilt_method_s1_TE_p5_tonnes,
+    scope2_tilt_adj_p5 = tilt_method_s2_TE_p5_tonnes,
+    scope3_tilt_adj_p5 = tilt_method_s3_TE_p5_tonnes,
+
+    scope1_tilt_adj_p95 = tilt_method_s1_TE_p95_tonnes,
+    scope2_tilt_adj_p95 = tilt_method_s2_TE_p95_tonnes,
+    scope3_tilt_adj_p95 = tilt_method_s3_TE_p95_tonnes
+  ) 
+
+Dataland <- read_excel(here("01_input_data", "01_firm_level_data", "04_Dataland", "Dataland_firm_level.xlsx")) %>%
+  filter(totalRevenueInEUR_quality %in% c("Estimated","Audited", "Reported")) %>% 
+  filter(scope1GhgEmissionsInTonnes_quality %in% c("Estimated","Audited", "Reported")) %>% 
+ filter(scope2GhgEmissionsLocationBasedInTonnes_quality %in% c("Estimated","Audited", "Reported")) %>% 
+ filter(scope3UpstreamGhgEmissionsInTonnes_quality %in% c("Estimated","Audited", "Reported"))  %>%
+ filter(scope3DownstreamGhgEmissionsInTonnes_quality %in% c("Estimated","Audited", "Reported"))  %>% 
+  select(companyName,
+         reportingPeriod,
+         totalRevenueInEUR_value,
+         scope1GhgEmissionsInTonnes_value,
+         scope2GhgEmissionsLocationBasedInTonnes_value,
+         scope1GhgEmissionsInTonnes_quality, 
+         scope2GhgEmissionsLocationBasedInTonnes_quality, 
+        scope3UpstreamGhgEmissionsInTonnes_quality, 
+        scope3DownstreamGhgEmissionsInTonnes_quality,
+        scope3UpstreamGhgEmissionsInTonnes_value,
+        scope3DownstreamGhgEmissionsInTonnes_value) %>%
+  mutate(TE_emission = rowSums(
+    select(., scope1GhgEmissionsInTonnes_value,
+              scope2GhgEmissionsLocationBasedInTonnes_value,
+              scope3UpstreamGhgEmissionsInTonnes_value), 
+              #scope3DownstreamGhgEmissionsInTonnes_value),
+    na.rm = TRUE
+  )) %>%
+  rename(CompanyName = companyName) %>% 
+    mutate(scope3_dataland = rowSums(
+    select(., scope3UpstreamGhgEmissionsInTonnes_value),
+              #scope3DownstreamGhgEmissionsInTonnes_value),
+    na.rm = TRUE
+  )) %>% 
+  rename(Revenue_dataland = totalRevenueInEUR_value) %>%
+  rename(scope1_dataland = scope1GhgEmissionsInTonnes_value) %>% 
+  rename(scope2_dataland = scope2GhgEmissionsLocationBasedInTonnes_value)
+
+
+selected_dataland <- read_delim(
+  here("01_input_data", "01_firm_level_data", "04_Dataland", "mapper_between_Dataland_infobel.csv"),
+  delim = ","
+) %>% 
+  mutate(company_id = as.character(company_id))
+
+Dataland_tilt_key <- selected_dataland %>% 
+  left_join(Dataland, by=(c("CompanyName"))) %>% 
+  group_by(company_id) %>%
+  filter(reportingPeriod == max(reportingPeriod, na.rm = TRUE)) %>%
+  ungroup() 
+
+Dataland_tilt <- Dataland_tilt_key %>% 
+  inner_join(TE_tilt, by ="company_id")  
+  
+```
+
+
+##03. Compute RelaDiff_f 
+If sector-based factors are calibrated to the same system boundaries,
+we expect $\overline{\mathrm{RelDiff}}$ to be close to zero, indicating
+broad portfolio-level consistency, while a large dispersion of
+$\mathrm{RelDiff}_f$ indicates substantial firm-level divergence from
+sector averages.
+
+This code generates Table 2:Emission and revenue differences between the tilt method and the firm’s reported emissions as a case study in Section 5.2.  
+
+```{r, warning=FALSE, message=FALSE}
+
+# --- 1. Compute relative differences and CI checks per company ---
+RelDif <- Dataland_tilt %>%
+  mutate(
+    RelDiff_total = (tilt_method_TE_MEAN_tonnes - TE_emission) / TE_emission,
+    
+    RelDiff_scope1 = (scope1_tilt_adj_mean - scope1_dataland) / scope1_dataland,
+    RelDiff_scope2 = (scope2_tilt_adj_mean - scope2_dataland) / scope2_dataland,
+    RelDiff_scope3 = (scope3_tilt_adj_mean - scope3_dataland) / scope3_dataland,
+
+    Within_CI_Total = TE_emission >= tilt_method_TE_p5_tonnes & TE_emission <= tilt_method_TE_p95_tonnes,
+    Within_CI_S1 = scope1_dataland >= scope1_tilt_adj_p5 & scope1_dataland <= scope1_tilt_adj_p95,
+    Within_CI_S2 = scope2_dataland >= scope2_tilt_adj_p5 & scope2_dataland <= scope2_tilt_adj_p95,
+    Within_CI_S3 = scope3_dataland >= scope3_tilt_adj_p5 & scope3_dataland <= scope3_tilt_adj_p95, 
+    
+    RelDiff_turnover = (Revenue - Revenue_dataland)/ Revenue_dataland
+  )  %>% 
+    filter(!is.na(RelDiff_total)) %>%
+  mutate(across(where(is.numeric), ~ round(., 3)))
+
+
+# --- 1. Korrelationen und CI-Anteile ---
+summary_stats_all <- RelDif %>%
+  summarise(
+    Correlation_Pearson_Total = cor(tilt_method_TE_MEAN_tonnes, TE_emission, method = "pearson", use = "complete.obs"),
+    Correlation_Spearman_Total = cor(tilt_method_TE_MEAN_tonnes, TE_emission, method = "spearman", use = "complete.obs"),
+
+    Share_Within_CI_Total = mean(Within_CI_Total, na.rm = TRUE)*100,
+    Share_Within_CI_S1 = mean(Within_CI_S1, na.rm = TRUE)*100,
+    Share_Within_CI_S2 = mean(Within_CI_S2, na.rm = TRUE)*100,
+    Share_Within_CI_S3 = mean(Within_CI_S3, na.rm = TRUE)*100
+  ) %>%
+  mutate(across(everything(), ~ round(., 3)))
+
+# --- 2. Absolute & relative Unterschiede (Emissionen + Umsatz) ---
+total_sums <- RelDif %>%
+  summarise(
+    # Emissions
+    Total_Emissions_Dataland = sum(TE_emission, na.rm = TRUE),
+    Total_Emissions_Tilt = sum(tilt_method_TE_MEAN_tonnes, na.rm = TRUE),
+
+    Total_Scope1_Dataland = sum(scope1_dataland, na.rm = TRUE),
+    Total_Scope1_Tilt = sum(scope1_tilt_adj_mean, na.rm = TRUE),
+
+    Total_Scope2_Dataland = sum(scope2_dataland, na.rm = TRUE),
+    Total_Scope2_Tilt = sum(scope2_tilt_adj_mean, na.rm = TRUE),
+
+    Total_Scope3_Dataland = sum(scope3_dataland, na.rm = TRUE),
+    Total_Scope3_Tilt = sum(scope3_tilt_adj_mean, na.rm = TRUE),
+
+    # Revenue
+    Total_Revenue_Dataland = sum(Revenue_dataland, na.rm = TRUE),
+    Total_Revenue_Tilt = sum(Revenue, na.rm = TRUE)
+  ) %>%
+  mutate(
+    # Absolute differences
+    Diff_Scope1 = Total_Scope1_Tilt - Total_Scope1_Dataland,
+    Diff_Scope2 = Total_Scope2_Tilt - Total_Scope2_Dataland,
+    Diff_Scope3 = Total_Scope3_Tilt - Total_Scope3_Dataland,
+
+    Diff_Total_Emissions = Total_Emissions_Tilt - Total_Emissions_Dataland,
+
+    # Relative differences (levels)
+    RelDiff_Scope1 = Diff_Scope1 / Total_Scope1_Dataland * 100,
+    RelDiff_Scope2 = Diff_Scope2 / Total_Scope2_Dataland * 100,
+    RelDiff_Scope3 = Diff_Scope3 / Total_Scope3_Dataland * 100,
+
+    RelDiff_Total_Emissions = Diff_Total_Emissions / Total_Emissions_Dataland * 100,
+
+    # Revenue
+    Diff_Revenue = Total_Revenue_Tilt - Total_Revenue_Dataland,
+    RelDiff_Revenue = Diff_Revenue / Total_Revenue_Dataland * 100,
+
+    # CONTRIBUTION SHARES (add to 100%)
+    Share_Scope1_in_TotalDiff = Diff_Scope1 / Diff_Total_Emissions * 100,
+    Share_Scope2_in_TotalDiff = Diff_Scope2 / Diff_Total_Emissions * 100,
+    Share_Scope3_in_TotalDiff = Diff_Scope3 / Diff_Total_Emissions * 100,
+
+    Share_Check = Share_Scope1_in_TotalDiff +
+                  Share_Scope2_in_TotalDiff +
+                  Share_Scope3_in_TotalDiff
+  ) %>%
+  select(
+    Total_Emissions_Dataland, Total_Emissions_Tilt, Diff_Total_Emissions, RelDiff_Total_Emissions,
+
+    Total_Scope1_Tilt, Total_Scope1_Dataland, Diff_Scope1, RelDiff_Scope1, Share_Scope1_in_TotalDiff,
+    Total_Scope2_Tilt, Total_Scope2_Dataland, Diff_Scope2, RelDiff_Scope2, Share_Scope2_in_TotalDiff,
+    Total_Scope3_Tilt, Total_Scope3_Dataland, Diff_Scope3, RelDiff_Scope3, Share_Scope3_in_TotalDiff,
+
+    Diff_Revenue, RelDiff_Revenue,
+    Share_Check
+  ) %>%
+  mutate(across(where(is.numeric), ~ round(., 2)))
+
+
+# --- 3. Kombiniere beides in einer Zeile ---
+combined_summary <- bind_cols(summary_stats_all, total_sums)
+
+# --- 4. Export als LaTeX-Tabelle ---
+combined_summary %>%
+  mutate(across(where(is.numeric), ~ formatC(.x, format = "f", digits = 2))) %>%
+  kable(format = "latex", booktabs = TRUE, 
+        caption = "Summary of correlations, emission differences (total and by scope), and revenue differences between ecoinvent and dataland") %>%
+  kable_styling(latex_options = c("scale_down")) %>%
+  save_kable("02_output_data/05b_benchmark_tilt_large_firms/Table-2-summary_correlation_emissions_revenue_diffs.tex")
+```
+
+
+##04. Firm level results for larger firms as a case study. 
+This generates Table 10. Firm Level emissions and revenue: Dataland vs. tilt comparison. 
+
+```{r, warning=FALSE, message=FALSE}
+# --- Helper: escape LaTeX special characters in text ---
+latex_escape <- function(x) {
+  x <- gsub("\\\\", "\\\\textbackslash{}", x)
+  x <- gsub("&", "\\\\&", x)
+  x <- gsub("%", "\\\\%", x)
+  x <- gsub("\\$", "\\\\$", x)
+  x <- gsub("#", "\\\\#", x)
+  x <- gsub("_", "\\\\_", x)
+  x
+}
+
+# --- Helper: TRUE/FALSE to LaTeX tick/cross ---
+yn_latex <- function(x) {
+  ifelse(is.na(x), "--", ifelse(x, "\\cmark", "\\xmark"))
+}
+
+# --- Generate LaTeX rows ---
+latex_rows <- apply(RelDif, 1, function(row) {
+  sprintf(
+    "%s & %s & %s & %.2f & %s & %s & %s & %s & %s & %s & %s & %s &  %s & %s & %s & %s \\\\",
+    
+    # Company name
+    latex_escape(row["CompanyName"]),
+    
+    # Revenues in 1,000 EUR
+    formatC(as.numeric(row["Revenue_dataland"]) / 1000, format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["Revenue"]) / 1000, format = "f", digits = 0, big.mark = ","),
+    as.numeric(row["RelDif_oecdf_turnover"]),
+    
+    # Dataland emissions (tCO2e)
+    formatC(as.numeric(row["scope1_dataland"]), format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["scope2_dataland"]), format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["scope3_dataland"]), format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["TE_emission"]), format = "f", digits = 0, big.mark = ","),
+    
+    # oecd emissions
+    formatC(as.numeric(row["tilt_method_s1_TE_MEAN_tonnes"]), format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["tilt_method_s2_TE_MEAN_tonnes"]), format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["tilt_method_s3_TE_MEAN_tonnes"]), format = "f", digits = 0, big.mark = ","),
+    formatC(as.numeric(row["tilt_method_TE_MEAN_tonnes"]), format = "f", digits = 0, big.mark = ","),
+
+    # Within CI flags
+    yn_latex(as.logical(row["Within_CI_S1"])),
+    yn_latex(as.logical(row["Within_CI_S2"])),
+    yn_latex(as.logical(row["Within_CI_S3"])),
+    yn_latex(as.logical(row["Within_CI_Total"]))
+  )
+})
+
+
+# --- Print LaTeX-ready rows ---
+cat(paste(latex_rows, collapse = "\n"))
+
+out_path <- here("02_output_data/05b_benchmark_tilt_large_firms/Table-10-RelDif_Dataland_tilt_per_firm.tex")
+
+writeLines(latex_rows, out_path)
+
+```
+
+
+
+

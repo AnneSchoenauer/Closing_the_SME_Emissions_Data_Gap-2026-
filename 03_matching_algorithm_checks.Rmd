@@ -1,0 +1,294 @@
+---
+title: "03_Matching_Algorithm_checks"
+author: "Anne Schoenauer"
+date: "2025-02-13"
+output: html_document
+---
+
+Note: This script requires licensed data from ecoinvent and therefore cannot be executed using the publicly available anonymized dataset. The code is provided for transparency only.
+
+The code generates Table 5 "Evaluation Metrics for the multi-agent LCA matching system" in the Appendix. 
+
+## Overview of the analysis workflow
+Overview of the matching algorithm evaluation workflow. This script evaluates the performance of the activity-level matching algorithm using manual validation as ground truth. The workflow focuses on assessing precision, error, latency, and coverage of the matching results.
+
+### 1. Loading required libraries and setting plotting defaults
+All required R packages for data manipulation, evaluation, visualization, and table export are loaded. A consistent ggplot2 theme and color scales are defined to ensure uniform presentation of results.
+
+### 2. Loading and preparing validation datasets
+Multiple datasets are imported and combined, including:
+  - Activity-level matching validation data
+  - Model-selected matches after filtering 
+  - Activity-level environmental footprint data 
+  - Firm- and product-level pipeline outputs
+Datasets are joined using company, product, and activity identifiers to align model predictions with manually accepted matches.
+
+### 3. Evaluation of matching quality
+The script compares model-selected activities to manually accepted candidates to assess matching accuracy:
+  - Precision@1: share of cases where the model-selected match equals the accepted match
+  - Precision@10: share of cases where an accepted match appears in the evaluated candidate list
+  - MAPE: mean absolute percentage error of environmental footprint values for incorrectly matched cases
+  - Numeric values are standardized prior to error computation to ensure consistency.
+
+### 4. Latency and score assessment
+For matches selected after filtering, the script computes average:
+  - Matching evaluation scores
+  - Runtime (in seconds)
+to assess computational performance and model confidence.
+
+### 5. Coverage analysis
+Coverage is evaluated by comparing extracted products to successfully matched products at the firm level. Summary statistics quantify:
+  - Firms with no extracted products
+  - Total extracted versus matched products
+  - The share of missing matches
+
+### 6. Export of evaluation results
+All evaluation metrics are displayed in the HTML output and exported as LaTeX tables for integration into reports and publications.
+
+
+##01. Libraries
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(readr)
+library(here)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(stringr)
+library(purrr)
+library(latex2exp)
+library(knitr)
+library(kableExtra)
+library(viridis)
+library(ggplot2)
+library(showtext)
+
+# Set consistent plot theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+
+# Optional: define viridis-based color scales (for consistency)
+scale_color_viridis_d <- function(...) scale_color_viridis(discrete = TRUE, option = "D", ...)
+scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option = "D", ...)
+
+```
+
+
+
+##02. Creating the first part of the evaluation metric (MAPE, precision@1 and precision@10)
+```{r, warning=FALSE, message=FALSE}
+# For false positives, precision.
+Matching_validation <- read_delim(
+  here("01_input_data", "03_activity_level_data", "01_tilt_data", "Matching_validation.csv"),
+  delim = ";"
+) %>%
+  select(company_id, company_name_input, related_company_product, activity_name,
+         co2_footprint_per_euro, match_eval_score, match_selected, lca_id,
+         validation_Anne, validation_Tilman)
+
+Latency_matching_score <- read_csv(
+  here("01_input_data/03_activity_level_data/01_tilt_data/tilt_activity_level.csv")
+) %>%
+  select(company_id, lca_id, related_company_product, match_selected_after_filtering)
+
+Matching_validation <- Matching_validation %>%
+  left_join(Latency_matching_score,
+            by = c("company_id", "lca_id", "related_company_product"))
+
+## Building the model's prediction table (one prediction per product)
+predicted_EF_df <- Matching_validation %>%
+  filter(match_selected_after_filtering == TRUE) %>%
+  select(
+    company_id,
+    related_company_product,
+    predicted_EF = co2_footprint_per_euro,
+    model_selected_candidate_id = lca_id,
+    activity_name
+  ) %>%
+  distinct(company_id, related_company_product, model_selected_candidate_id, .keep_all = TRUE)
+
+## Building the ground truth accepted by manual validation (Anne)
+accepted_by_anne <- Matching_validation %>%
+  filter(validation_Anne == 1) %>%
+  select(
+    company_id,
+    related_company_product,
+    activity_name,
+    accepted_candidate_id = lca_id,
+    true_EF = co2_footprint_per_euro
+  ) %>%
+  distinct(company_id, related_company_product, accepted_candidate_id, .keep_all = TRUE)
+
+# Compare prediction vs. accepted candidates (keep this object for later MAPE logic)
+comparison <- predicted_EF_df %>%
+  left_join(
+    accepted_by_anne,
+    by = c("company_id", "related_company_product")
+  ) %>%
+  mutate(
+    is_true_match = !is.na(accepted_candidate_id) &
+      model_selected_candidate_id == accepted_candidate_id
+  )
+
+# Collapse to ONE row per product prediction (avoids double counting due to joins)
+match_eval <- comparison %>%
+  group_by(company_id, related_company_product) %>%
+  summarise(
+    predicted_EF = first(predicted_EF),
+    model_selected_candidate_id = first(model_selected_candidate_id),
+    correct = any(is_true_match),
+    .groups = "drop"
+  )
+
+# Prepare data for MAPE on incorrect predictions (one true EF per product if multiple accepted exist)
+mape_data <- match_eval %>%
+  filter(!correct) %>%
+  left_join(
+    accepted_by_anne %>%
+      group_by(company_id, related_company_product) %>%
+      summarise(true_EF = first(true_EF), .groups = "drop"),
+    by = c("company_id", "related_company_product")
+  ) %>%
+  mutate(
+    predicted_EF = parse_number(predicted_EF, locale = locale(decimal_mark = ",")),
+    true_EF = parse_number(true_EF, locale = locale(decimal_mark = ","))
+  ) %>%
+  filter(!is.na(predicted_EF), !is.na(true_EF), true_EF != 0) %>%
+  mutate(
+    ape = abs(predicted_EF - true_EF) / abs(true_EF)
+  )
+
+# compute MAPE
+mape <- mean(mape_data$ape) * 100
+
+# ----------------------------
+# compute Precision@1 (product-level)
+# ----------------------------
+precision_at_1 <- mean(match_eval$correct, na.rm = TRUE)
+
+# ----------------------------
+# compute Precision@K (our "list" size, using top K candidates by match_eval_score)
+# If the candidate list is shorter than K, we only use all available candidates.
+# ----------------------------
+K <- 10
+
+precision_at_10 <- Matching_validation %>%
+  group_by(company_id, related_company_product) %>%
+  arrange(desc(match_eval_score), .by_group = TRUE) %>%
+  mutate(rank = row_number()) %>%
+  summarise(
+    correct_in_topk = any(validation_Anne == 1 & rank <= K),
+    .groups = "drop"
+  ) %>%
+  summarise(precision_at_10 = mean(correct_in_topk, na.rm = TRUE)) %>%
+  pull(precision_at_10)
+
+## Export the metrics table
+evaluation_table <- tibble(
+  Metric = c("Precision@1", paste0("Precision@", K), "MAPE"),
+  Value = c(round(precision_at_1, 3),
+            round(precision_at_10, 3),
+            round(mape, 2))
+)
+
+latex_evaluation_table <- kable(
+  evaluation_table,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Evaluation Metrics"
+)
+
+writeLines(
+  latex_evaluation_table,
+  here("02_output_data/03_matching_algorithm_validation/Table-5-first-part_evaluation_table.tex")
+)
+
+# Output
+evaluation_table
+```
+
+
+
+#0.3 For latency score average
+```{r, warning=FALSE, message=FALSE}
+Latency_matching_score <- read_delim(
+  here("01_input_data/03_activity_level_data/01_tilt_data/tilt_activity_level.csv"),
+  delim = ",", 
+  locale = locale(encoding = "UTF-8"),
+  show_col_types = FALSE
+)
+
+summary_stats_latency <- Latency_matching_score %>%
+  filter(match_selected_after_filtering == TRUE) %>% 
+  summarise(
+    avg_matching_score = mean(match_eval_score, na.rm = TRUE),
+    avg_run_time = mean(runtime_seconds, na.rm = TRUE)
+    )
+
+latex_summary_stats_latency <- kable(
+  summary_stats_latency,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Latency Stats"
+)
+
+summary_stats_latency
+writeLines(latex_summary_stats_latency, here("02_output_data/03_matching_algorithm_validation/Table-5-second-part-latency_score_table.tex"))
+
+```
+
+
+#0.4 For coverage
+```{r, warning=FALSE, message=FALSE}
+# Read and prepare the data
+Coverage <- read_csv(here("01_input_data/02_product_level_data/tilt_related_company_product_level_results_anon.csv")) %>% 
+  select(company_id, number_of_products_matched, number_of_products_extracted) %>%
+  mutate(
+    number_of_extracted_products = as.numeric(number_of_products_extracted),
+    number_of_matched_products = as.numeric(number_of_products_matched)
+  )
+
+# Collapse to one row per company
+Coverage_firm_level <- Coverage %>%
+  group_by(company_id) %>%
+  summarise(
+    number_of_extracted_products = sum(number_of_extracted_products, na.rm = TRUE),
+    number_of_matched_products = sum(number_of_matched_products, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Calculate summary statistics
+summary_stats_coverage <- Coverage_firm_level %>%
+  summarise(
+    n_companies_no_extraction = sum(number_of_extracted_products == 0, na.rm = TRUE),
+    total_extracted_products = sum(number_of_extracted_products, na.rm = TRUE),
+    total_matched_products = sum(number_of_matched_products, na.rm = TRUE),
+    total_missing_matches = total_extracted_products - total_matched_products,
+    percent_missing_matches = total_missing_matches / total_extracted_products * 100,
+    total_firms = n(),
+    percent_firms_no_extraction = n_companies_no_extraction / total_firms * 100
+  )
+
+#Output
+latex_summary_stats_coverage <- kable(
+  summary_stats_coverage,
+  format = "latex",
+  booktabs = TRUE,
+  caption = "Coverage"
+)
+
+
+writeLines(latex_summary_stats_coverage, here("02_output_data/03_matching_algorithm_validation/Table-5-third-part_coverage.tex"))
+
+
+```

@@ -1,0 +1,742 @@
+---
+title: "06a_analysis_sectoral_emission"
+author: "Tilman Trompke and Anne Schoenauer"
+date: "2025-02-13"
+output: html_document
+---
+
+##Overview of the analysis workflow
+This R Markdown analyzes sectoral emissions and reduction potentials based on SME firm-level results from the tilt pipeline. It combines weighted sector aggregates (using stratification weights), geographic diagnostics (Germany map using proprietary coordinates), and sector/industry deep-dives that relate emissions intensity to reduction potential.
+
+###01. Libraries
+All required R packages for data processing, plotting, LaTeX support, and spatial mapping are loaded. A consistent ggplot theme and viridis-based helper scales are defined for uniform visualization outputs.
+
+###02. Preparing the data
+Firm-level tilt results are loaded for SMEs (Employees < 250; Revenue ≤ 50m) and enriched with (i) sample weights for population-representative aggregation and (ii) a company-id to latitude/longitude mapper for geographic visualization. OECD sector totals are also loaded for benchmarking. The script prepares additional variables used throughout the analysis, including sector labels, revenue classes, reduction-potential shares, and emission-intensity measures (kg CO₂e per EUR revenue). Two industry subsets are created for deep-dives: A01 (agriculture) and C20 (chemicals).
+
+###03. Geographic distribution of firms
+Using proprietary longitude/latitude data, the script maps firms within Germany and visualizes their emissions rank (normalized). This section generates Figure 4 (code currently set to eval = FALSE, so it will only render if enabled) and saves it as:
+Figure 4: 02_output_data/06_analysis/te_ger_heatmap.pdf
+
+##04. Analysis results
+This part produces the main sector-level outputs:
+- Figure 5: Compares sectoral shares of total emissions between OECD economy-wide totals and weighted tilt totals, focusing on the top 5 sectors by tilt share and grouping the remainder as “Other Sectors”.
+Output: 02_output_data/06_analysis/Figure-6-oecd_tilt_plot_share_emissions_top5_labeled.pdf
+- Figure 6: Creates a sector-by-climate-action heatmap of emission reduction potential (in kt CO₂e, with percent shares relative to sector emissions), excluding selected sectors and focusing on applicable actions.
+Output: 02_output_data/06_analysis/reduction_potential_heatmap.pdf
+- Figure 7: Deep-dive for A01 (agriculture) showing a quadrant/bubble plot of emissions intensity vs. reduction-potential intensity, with median-based quadrant cutoffs and an annotation for the upper-right quadrant (high emissions & high reduction potential).
+Output: 02_output_data/06_analysis/quadrants_a01.pdf
+- Figure 13 (Appendix 9.4): аналогous quadrant/bubble deep-dive for C20 (chemicals).
+Output: 02_output_data/06_analysis/quadrant_c20.pdf
+
+Overall, this script provides an economy- and sector-level view of emissions and mitigation opportunities, combining population-weighted aggregation with geographic diagnostics and industry-specific deep-dives into emissions intensity and reduction potential.
+
+
+##01. Libraries
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Load all required libraries
+library(readr)
+library(here)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(scales)
+library(ggforce)
+library(latex2exp)
+library(knitr)
+library(kableExtra)
+library(viridis)
+library(ggplot2)
+library(showtext)
+library(readxl)
+library(here)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(scales)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+
+
+# Set consistent plot theme
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", size = 12),
+      legend.title = element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+)
+
+# Use a color scale from viridis (for consistency and accessibility)
+scale_color_viridis_d <- function(...) scale_color_viridis(discrete = TRUE, option = "D", ...)
+scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option = "D", ...)
+
+```
+
+##02. Preparing the Data
+#02.1. Loading in data
+We load in firm-level data and select total emissions (mean, 95th and 5th uncertainty range). We also create a SD. 
+```{r, warning=FALSE, message=FALSE}
+#firm-level data
+TE_tilt_raw <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon.csv")) %>% 
+  filter(EmployeesTotal <250) %>% 
+  filter(Revenue <= 50000000) 
+
+#sample weights
+sample_weights <- read_csv(here("02_output_data/02_stratification/sample_with_weights.csv"))
+
+#proprietary longitude and latitude
+long_lat_mapper <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/mapper_company_id_longitude_latitude.csv")) 
+
+# oecd data
+oecd_emissions_raw <- read_csv(here("01_input_data/03_activity_level_data/02_oecd_data/oecd_emission_factors.csv"))
+
+```
+
+
+#02.2. Prep company data
+```{r}
+#Cleaning of NACE data and creation of sector_label 
+TE_tilt <- TE_tilt_raw %>%
+   select(c(company_id, Revenue, EmployeesTotal, nace_section_list_adjusted, nace_section, nace_2_list, tilt_method_lca_source,
+          tilt_method_TE_MEAN_tonnes, tilt_method_TE_SD_tonnes, tilt_method_TE_p95_tonnes, 
+          tilt_method_TE_p5_tonnes, tilt_method_s1_TE_MEAN_tonnes, tilt_method_s1_TE_p5_tonnes, tilt_method_s1_TE_p95_tonnes,tilt_method_s2_TE_MEAN_tonnes, tilt_method_s2_TE_p5_tonnes, tilt_method_s2_TE_p95_tonnes, tilt_method_s3_TE_MEAN_tonnes, tilt_method_s3_TE_p5_tonnes, tilt_method_s3_TE_p95_tonnes, 
+          tilt_method_reduction_potential_TE_MEAN_tonnes, 
+          reduction_potential_ab2_TE_MEAN_tonnes, 
+          reduction_potential_re1_TE_MEAN_tonnes, 
+          reduction_potential_re4_TE_MEAN_tonnes, number_of_products_matched))
+
+
+# make sector-label "multi_sector" if multiple sectors exist, or use the nace name
+TE_tilt <- TE_tilt %>%
+  mutate(
+    sector_clean = ifelse(nace_section == "multi-sector", "multi-sector", nace_section_list_adjusted)
+  )
+
+# create reduction potential share
+TE_tilt <- TE_tilt |> 
+  mutate(reduction_potential_share =
+           tilt_method_reduction_potential_TE_MEAN_tonnes/tilt_method_TE_MEAN_tonnes)
+
+sample_weights <- sample_weights %>% 
+  select(c(stratum, weight, emp_size_class, company_id))
+
+#0Join weights to firm data
+TE_tilt <- TE_tilt |> 
+  left_join(sample_weights, by = "company_id")
+
+#########
+
+
+##Create the data for German map: Join for geographic distribution also the Latitude/Longitude (Propietary data)
+TE_tilt_long_lat <- TE_tilt %>% 
+  left_join(long_lat_mapper, by ="company_id")
+
+
+#########
+
+##Create the data for Deep-dive: 
+#Select relevant columns and calculate emission factors
+TE_tilt_deep_dive <- TE_tilt_raw |> 
+  select(company_id, nace_section,
+         EmployeesTotal, Revenue, tilt_method_s1_TE_MEAN_tonnes, tilt_method_reduction_potential_TE_MEAN_tonnes, nace_2_list, tilt_method_s2_TE_MEAN_tonnes, tilt_method_s3_TE_MEAN_tonnes, oecd_s1_TE_MEAN_tonnes, oecd_s2_TE_MEAN_tonnes, oecd_s3_TE_MEAN_tonnes, epa_s1_TE_MEAN_tonnes, epa_s2_TE_MEAN_tonnes, epa_s3_TE_MEAN_tonnes) |> 
+  mutate(
+    tilt_method_s1_EF_MEAN_kg = (tilt_method_s1_TE_MEAN_tonnes/Revenue)*1000, 
+    tilt_method_s2_EF_MEAN_kg = (tilt_method_s2_TE_MEAN_tonnes/Revenue)*1000, 
+    tilt_method_s3_EF_MEAN_kg = (tilt_method_s3_TE_MEAN_tonnes/Revenue)*1000, 
+    tilt_method_EF_MEAN_kg = (tilt_method_s1_EF_MEAN_kg+tilt_method_s2_EF_MEAN_kg+tilt_method_s3_EF_MEAN_kg),
+    oecd_s1_EF_MEAN_kg = (oecd_s1_TE_MEAN_tonnes/Revenue)*1000, 
+    oecd_s2_EF_MEAN_kg = (oecd_s2_TE_MEAN_tonnes/Revenue)*1000, 
+    oecd_s3_EF_MEAN_kg = (oecd_s3_TE_MEAN_tonnes/Revenue)*1000, 
+    oecd_EF_MEAN_kg = (oecd_s1_EF_MEAN_kg+oecd_s2_EF_MEAN_kg+oecd_s3_EF_MEAN_kg),
+    epa_s1_EF_MEAN_kg = (epa_s1_TE_MEAN_tonnes/Revenue)*1000, 
+    epa_s2_EF_MEAN_kg = (epa_s2_TE_MEAN_tonnes/Revenue)*1000, 
+    epa_s3_EF_MEAN_kg = (epa_s3_TE_MEAN_tonnes/Revenue)*1000,
+    epa_EF_MEAN_kg = (epa_s1_EF_MEAN_kg+epa_s2_EF_MEAN_kg+epa_s3_EF_MEAN_kg), 
+    tilt_method_reduction_potential_EF_MEAN_kg = (tilt_method_reduction_potential_TE_MEAN_tonnes/Revenue *1000)
+  )
+
+#Create subset of data
+# select single sections
+TE_tilt_single <- TE_tilt_deep_dive |> 
+  filter(!(nace_section == "multi-sector"))
+
+
+#Create relevant subsets for deep-dive analysis
+#For orientation: List of NACE codes: https://nacecode.de/ or https://ec.europa.eu/eurostat/documents/3859598/5902521/KS-RA-07-015-EN.PDF.pdf/dd5443f5-b886-40e4-920d-9df03590ff91?t=1414781457000 
+#Illustrative selection (all other NACE codes also possible): 
+#- A01: Crop and animal production, hunting and related service activities 
+#- C20: Manufacture of chemicals and chemical products 
+
+tilt_a01 <- TE_tilt_single |> 
+  filter(nace_2_list == "A01")
+
+tilt_c20 <- TE_tilt_single |> 
+  filter(nace_2_list == "C20")
+
+
+#########
+
+##Create data for OECD vs. tilt comparison
+#weight total emissions using the weights of the stratification exercise
+TE_tilt_weighted <- TE_tilt |> 
+  mutate(
+    total_emissions_weighted = tilt_method_TE_MEAN_tonnes*weight,
+    total_revenue_weighted = Revenue*weight, 
+    total_s1_weighted = tilt_method_s1_TE_MEAN_tonnes*weight, 
+    total_s2_weighted = tilt_method_s2_TE_MEAN_tonnes*weight, 
+    total_s3_weighted = tilt_method_s3_TE_MEAN_tonnes*weight
+  ) 
+
+
+#Sum emissions per sector letter
+company_emissions_by_sector <- TE_tilt_weighted %>%
+  filter(!(nace_section == "multi-sector")) |> 
+  group_by(nace_section) |> 
+  summarise(
+    total_company_emissions = sum(total_emissions_weighted, na.rm = TRUE),
+    total_company_s1 = sum(total_s1_weighted, na.rm = TRUE), 
+    total_company_s2 = sum(total_s2_weighted, na.rm = TRUE), 
+    total_company_s3 = sum(total_s3_weighted, na.rm = TRUE), 
+    .groups = "drop"
+  ) |> 
+  mutate(
+    nace_section = as.character(nace_section)
+  )
+
+oecd_emissions <- oecd_emissions_raw |>
+  mutate(
+    nace_section = str_extract(activity, "[A-Z]")
+  ) |> 
+  select(origin_area, activity, time_period, S1, S2, S3U, total_s1_s2_s3u, prod_value, nace_section)
+
+# note: OECD emissions are displayed in million kg, but we want to show them in tonnes, i.e. divide by 1,000 (conversion to tons) and multiply with 1,000,000 (from millions to normal count)
+# multiply emissions & prod with 1,000,000 (because they are in million kg)
+oecd_emissions <- oecd_emissions |> 
+  mutate(
+    total_s1_s2_s3u = total_s1_s2_s3u * 1000000 / 1000, 
+    S1 = S1* 1000000 / 1000, 
+    S2 = S2* 1000000 / 1000, 
+    S3U = S3U* 1000000 / 1000
+  )
+
+
+
+```
+
+
+## 03. Geographic Distribution of Firms
+This generates Figure 4: SMEs locations coloured by emission rank, unweighted; with propietary data. 
+
+```{r map-distribution, echo=FALSE, message=FALSE, warning=FALSE}
+
+##Create Rank (firm with the lowest emissions get 1 the next lowest 2, etc, we normalise the rank so that the rank is between 0-1)
+TE_tilt_long_lat <- TE_tilt_long_lat %>%
+  mutate(
+    tilt_method_TE_MEAN_weighted = tilt_method_TE_MEAN_tonnes,
+    TE_rank = rank(tilt_method_TE_MEAN_weighted, ties.method = "first"),
+    TE_rank_norm = scales::rescale(TE_rank, to = c(0, 1))  # normalized [0, 1]
+  )
+
+##Turn into spatial code
+firm_sf <- TE_tilt_long_lat %>%
+  sf::st_as_sf(coords = c("Longitude", "Latitude"), crs = 4326)
+
+# Get Germany basemap as an sf object
+germany <- ne_countries(scale = "medium", country = "Germany", returnclass = "sf")
+
+te_ger_heatmap <- ggplot(data = germany) +
+  geom_sf(fill = "gray95", color = "gray70") +
+  geom_sf(data = firm_sf, aes(color = TE_rank_norm), size = 1, alpha = 0.7) +
+scale_color_gradientn(
+  colors = c("steelblue", "lightgray", "indianred"),
+  values = scales::rescale(c(0, 0.5, 1)),
+  name = "Emissions Rank\n(Normalised)"
+)+
+  labs(
+    x = "Longitude",
+    y = "Latitude"
+  )
+
+te_ger_heatmap
+
+# Save the plot
+ggsave(
+  filename = "02_output_data/06_analysis/Figure-4-te_ger_heatmap.pdf",
+  plot = te_ger_heatmap,
+  width = 10, height = 8, dpi = 300
+)
+
+```
+
+#04 Create plot with total emissions for top 5 sectors
+Generates Figure 5:  Sectoral emissions from economy wide totals (OECD) compared to product-based (tilt)
+emissions estimations, in relationship to the source’s total emissions. Expressed in percent and
+weighted.
+
+```{r}
+#Join all data into one dataset
+oecd_emissions_by_sector <- oecd_emissions %>%
+  group_by(nace_section) |> 
+  summarise(
+    total_oecd_emissions = sum(total_s1_s2_s3u, na.rm = TRUE),
+    total_oecd_s1 = sum(S1, na.rm = TRUE), 
+    total_oecd_s2 = sum(S2, na.rm = TRUE), 
+    total_oecd_s3 = sum(S3U, na.rm = TRUE),
+    .groups = "drop"
+  ) |> 
+  mutate(
+    nace_section = as.character(nace_section)
+  )
+
+# join tables and clean
+comparison_emissions <- oecd_emissions_by_sector |> 
+  left_join(company_emissions_by_sector, by = "nace_section") |> 
+  filter(total_company_emissions > 0) |>
+  mutate(
+    share_of_tilt_to_oecd_emissions = (total_company_emissions/total_oecd_emissions)
+  )
+
+# add totals
+totals <- comparison_emissions |>
+  summarise(
+    total_oecd = sum(total_oecd_emissions, na.rm = TRUE),
+    total_company = sum(total_company_emissions, na.rm = TRUE)
+  )
+
+colnames(comparison_emissions)
+
+# add share columsn
+comparison_emissions <- comparison_emissions |>
+  mutate(
+    share_oecd_emissions =
+      total_oecd_emissions / totals$total_oecd,
+    share_company_emissions =
+      total_company_emissions / totals$total_company
+  )
+
+
+colnames(comparison_emissions)
+
+comparison_emissions <- comparison_emissions %>%
+  bind_rows(
+    comparison_emissions %>%
+      summarise(
+        across(
+          where(is.numeric) & !matches("^share_of_tilt_to_oecd_emissions$"),
+          sum,
+          na.rm = TRUE
+        ),
+        share_of_tilt_to_oecd_emissions = NA_real_
+      ) %>%
+      mutate(nace_section = "Total") %>%
+      select(nace_section, everything())
+  )
+
+colnames(comparison_emissions)
+
+comparison_emissions <- comparison_emissions |> 
+  rename(total_tilt_emissions = total_company_emissions, 
+         total_tilt_s1 = total_company_s1, 
+         total_tilt_s2 = total_company_s2, 
+         total_tilt_s3 = total_company_s3, 
+         share_tilt_emissions = share_company_emissions
+  )
+
+sector_mapper <- TE_tilt %>%
+  filter(!(nace_section == "multi-sector")) %>% 
+  select(nace_section, nace_section_list_adjusted) %>% 
+  distinct()
+
+comparison_emissions <- comparison_emissions %>% 
+  left_join(sector_mapper, by ="nace_section")
+
+# Prep long df (as you already do)
+plot_df <- comparison_emissions |> 
+  filter(nace_section != "Total") |>
+  mutate(nace_label = paste(nace_section, nace_section_list_adjusted, sep = " - ")) |>
+  select(nace_label, share_oecd_emissions, share_tilt_emissions) |>
+  pivot_longer(
+    cols = c(share_oecd_emissions, share_tilt_emissions),
+    names_to = "source",
+    values_to = "share"
+  ) |>
+  mutate(
+    source = recode(
+      source,
+      share_oecd_emissions = "OECD emissions",
+      share_tilt_emissions = "tilt emissions"
+    )
+  ) 
+
+# Identify top 5 sectors by tilt share
+top5 <- plot_df |>
+  filter(source == "tilt emissions") |>
+  arrange(desc(share)) |>
+  slice_head(n = 5) |>
+  pull(nace_label)
+
+# Bucket + sum shares, then order by tilt
+plot_df2 <- plot_df |>
+  mutate(
+    nace_group = if_else(nace_label %in% top5, nace_label, "Other Sectors")
+  ) |>
+  group_by(source, nace_group) |>
+  summarise(share = sum(share, na.rm = TRUE), .groups = "drop") |>
+  group_by(nace_group) |>
+  mutate(tilt_share_for_order = share[source == "tilt emissions"][1]) |>
+  ungroup() |>
+  arrange(tilt_share_for_order) |>
+  mutate(
+    nace_group = factor(
+      nace_group,
+      levels = c(
+        "Other Sectors",
+        setdiff(unique(nace_group), "Other Sectors")
+      )
+    )
+  ) |>
+  select(nace_label = nace_group, source, share)
+
+## PLOT
+## PLOT with percentage labels
+oecd_tilt_plot_share_emissions_top5 <- ggplot(
+  plot_df2,
+  aes(x = nace_label, y = share, fill = source)
+) +
+  geom_col(
+    width = 0.5,
+    position = position_dodge(width = 0.6)
+  ) +
+  # Add percent labels
+  geom_text(
+    aes(label = scales::percent(share, accuracy = 0.1)),
+    position = position_dodge(width = 0.6),
+    hjust = -0.1,  # nudges labels to the right of the bar
+    size = 3
+  ) +
+  scale_fill_manual(
+    values = c("OECD emissions" = "steelblue",
+               "tilt emissions" = "indianred")
+  ) +
+  scale_y_continuous(
+    labels = percent_format(accuracy = 0.1),
+    expand = expansion(mult = c(0, 0.15))  # extra space for labels
+  ) +
+  labs(
+    x = "Sector",
+    y = "Share of total emissions",
+    fill = NULL
+  ) +
+  coord_flip() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    legend.position = "top"
+  )
+
+# Save plot
+ggsave(
+  filename = "02_output_data/06_analysis/Figure-5-oecd_tilt_plot_share_emissions_top5_labeled.pdf",
+  plot = oecd_tilt_plot_share_emissions_top5,
+  width = 10, height = 8, dpi = 300
+)
+
+# Show plot
+print(oecd_tilt_plot_share_emissions_top5)
+
+```
+
+
+## 05. Reduction Potential vs. Total Emissions 
+Create figure with shares per sector, but color coding for absolute reduction potential
+Generates Figure 6: Sectoral emission reduction potential by climate action for sectors where applicable, unweighted. 
+
+```{r}
+
+# --- 1. Total emissions (Scope 2 for RE1/RE4, Scope 3 for AB2) ---
+sector_emissions <- TE_tilt %>%
+  filter(sector_clean != "Electricity, gas, steam\nand air conditioning\nsupply") |>
+  filter(tilt_method_lca_source == "ecoinvent") %>%
+  mutate(
+    relevant_scope_emissions = case_when(
+      sector_clean == "Agriculture, forestry and\nfishing" ~ tilt_method_TE_MEAN_tonnes,
+      TRUE ~ tilt_method_TE_MEAN_tonnes
+    )
+  ) %>%
+  group_by(sector_clean) %>%
+  summarise(total_emissions = sum(relevant_scope_emissions, na.rm = TRUE), .groups = "drop")
+
+# --- 1. Reduction potentials (only relevant scopes) ---
+TE_tilt_ei <- TE_tilt %>%
+  filter(tilt_method_lca_source == "ecoinvent") %>%
+  mutate(
+    w_AB2 = if_else(sector_clean == "Agriculture, forestry and\nfishing", reduction_potential_ab2_TE_MEAN_tonnes, NA_real_),
+    w_RE1 = reduction_potential_re1_TE_MEAN_tonnes,
+    w_RE4 = reduction_potential_re4_TE_MEAN_tonnes
+  ) |> 
+  filter(sector_clean != "Electricity, gas, steam\nand air conditioning\nsupply")
+
+reduction_sector_unweighted <- TE_tilt_ei %>%
+  group_by(sector_clean) %>%
+  summarise(
+    AB2 = sum(w_AB2, na.rm = TRUE),
+    RE1 = sum(w_RE1, na.rm = TRUE),
+    RE4 = sum(w_RE4, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(
+    cols = -sector_clean,
+    names_to = "Climate_Action",
+    values_to = "Reduction_tCO2"
+  ) %>%
+  mutate(
+    Climate_Label = case_when(
+      Climate_Action == "RE1" ~ "Solar Power",
+      Climate_Action == "RE4" ~ "Heat Pumps",
+      Climate_Action == "AB2" ~ "Efficient Farm Machinery",
+      TRUE ~ Climate_Action
+    )
+  ) 
+
+unique(reduction_sector_unweighted$sector_clean)
+
+# # --- 3. Merge emissions + compute shares ---
+reduction_sector_labeled <- reduction_sector_unweighted %>%
+  left_join(sector_emissions, by = "sector_clean") %>%
+  filter(total_emissions > 0) %>%
+  filter(!sector_clean %in% c(
+    "Transportation and\nstorage",
+    "Wholesale and retail\ntrade; repair of motor\nvehicles and motorcycles",
+    "Accommodation and food\nservice activities", 
+    "Other service activities"
+  )) %>%
+  mutate(
+    share_percent = if_else(
+      Reduction_tCO2 > 0,
+      Reduction_tCO2 / total_emissions * 100,
+      NA_real_
+    ),
+    label_text = if_else(
+      Reduction_tCO2 > 0,
+      paste0(round(Reduction_tCO2 / 1000, 1), " kt\n(", round(share_percent, 1), "%)"),
+      NA_character_
+    )
+  ) %>%
+  group_by(sector_clean) %>%
+  filter(any(!is.na(Reduction_tCO2))) %>%
+  ungroup() 
+
+# --- 4. Plot ---
+reduction_potential <- ggplot(reduction_sector_labeled, 
+       aes(x = Climate_Label, 
+           y = reorder(sector_clean, Reduction_tCO2), 
+           fill = if_else(Reduction_tCO2 == 0, NA_real_, Reduction_tCO2)
+           )
+       ) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = label_text), size = 3) +
+ scale_fill_gradientn(
+  colors = c("indianred", "steelblue", "seagreen"),
+  values = scales::rescale(c(0, 0.02, 0.19)),
+  name = "Sectoral emission reduction potential in kt CO2e",
+  labels = function(x) scales::label_comma()(x / 1000),
+  na.value = "white"
+)+
+  labs(
+    x = "Climate Action",
+    y = "Sector"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title = element_text(face = "bold")
+  )
+
+reduction_potential
+
+ggsave(
+  "02_output_data/06_analysis/Figure-6-reduction_potential_heatmap.pdf",
+  reduction_potential,
+  width = 8,
+  height = 6,
+  dpi = 300
+)
+
+
+```
+
+
+#03.3.2. Quadrant Bubble
+For Agriculture: 
+Generates Figure 7: Emission intensity and reduction potential for industry "Crop and animal production,
+hunting and related service activities" as a deep-dive, unweighted.
+
+#03.3.2. Quadrant Bubble - for Agriculture
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+# 1) Prep bubble data: count duplicates of (x,y)
+quad_df <- tilt_a01 %>%
+  count(
+    tilt_method_EF_MEAN_kg,
+    tilt_method_reduction_potential_EF_MEAN_kg,
+    name = "n_firms"
+  ) %>%
+  rename(
+    x_tilt_ef = tilt_method_EF_MEAN_kg,
+    y_red_ef  = tilt_method_reduction_potential_EF_MEAN_kg
+  )
+
+# 2) Quadrant cutoffs (median splits)
+x_cut <- median(quad_df$x_tilt_ef, na.rm = TRUE)
+y_cut <- median(quad_df$y_red_ef,  na.rm = TRUE)
+
+# 3) Add quadrant label for later use
+quad_df <- quad_df %>%
+  mutate(
+    quadrant = case_when(
+      x_tilt_ef > x_cut & y_red_ef > y_cut ~ "upper_right",
+      x_tilt_ef <= x_cut & y_red_ef > y_cut ~ "upper_left",
+      x_tilt_ef <= x_cut & y_red_ef <= y_cut ~ "lower_left",
+      x_tilt_ef > x_cut & y_red_ef <= y_cut ~ "lower_right"
+    )
+  )
+
+# 4) Count total firms in upper right
+n_upper_right <- quad_df %>%
+  filter(quadrant == "upper_right") %>%
+  summarise(n = sum(n_firms)) %>%
+  pull(n)
+
+# 5) Plot with annotation
+p_quadrants_a01 <- ggplot(quad_df, aes(x = x_tilt_ef, y = y_red_ef, size = n_firms)) +
+  geom_point(alpha = 0.7, color = "indianred") +
+  geom_vline(xintercept = x_cut, linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = y_cut, linetype = "dashed", color = "grey50") +
+
+  # Add annotation to upper right quadrant
+  annotate(
+    "text",
+    x = max(quad_df$x_tilt_ef, na.rm = TRUE) * 0.95,
+    y = max(quad_df$y_red_ef, na.rm = TRUE) * 0.95,
+    label = paste0("Upper-right quadrant:\n", n_upper_right, " firms"),
+    hjust = 1,
+    vjust = 1,
+    fontface = "bold"
+  ) +
+
+  scale_x_continuous(labels = label_comma(big.mark=".", decimal.mark=",")) +
+  scale_y_continuous(labels = label_comma(big.mark=".", decimal.mark=",")) +
+  scale_size_area(
+    max_size = 14,
+    breaks = c(1, 10, 20),
+    limits = c(1, 20)
+  ) +
+  labs(
+    x = "Emission intensity (kg CO2e per EUR revenue)",
+    y = "Reduction potential intensity (kg CO2e per EUR revenue)",
+    size = "Number of firms"
+  ) +
+  theme(legend.position = "top")
+
+p_quadrants_a01
+
+# Save plot
+ggsave(
+  filename = "02_output_data/06_analysis/Figure-7-quadrants_a01.pdf",
+  plot = p_quadrants_a01,
+  width = 10, height = 6, dpi = 300
+)
+
+
+```
+
+#Also for Chemics 
+Generates Figure 13: Emission intensity and reduction potential for industry "C20 - Manufacturing of
+chemicals and chemical products" as a deep-dive, unweighted. 
+--> In the Appendix Section 9.4. 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+# --- 1) Prep bubble data: count duplicates of (x, y) ---
+quad_df <- tilt_c20 %>%
+  count(
+    tilt_method_EF_MEAN_kg,
+    tilt_method_reduction_potential_EF_MEAN_kg,
+    name = "n_firms"
+  ) %>%
+  rename(
+    x_tilt_ef = tilt_method_EF_MEAN_kg,
+    y_red_ef  = tilt_method_reduction_potential_EF_MEAN_kg
+  )
+
+# --- 2) Quadrant cutoffs (median splits) ---
+x_cut <- median(quad_df$x_tilt_ef, na.rm = TRUE)
+y_cut <- median(quad_df$y_red_ef,  na.rm = TRUE)
+
+# --- 3) Count number of firms in upper-right quadrant ---
+n_upper_right <- quad_df %>%
+  filter(x_tilt_ef > x_cut, y_red_ef > y_cut) %>%
+  summarise(total = sum(n_firms)) %>%
+  pull(total)
+
+# --- 4) Plot ---
+p_quadrants_c20 <- ggplot(quad_df, aes(x = x_tilt_ef, y = y_red_ef, size = n_firms)) +
+  geom_point(alpha = 0.7, color = "indianred") +
+  geom_vline(xintercept = x_cut, linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = y_cut, linetype = "dashed", color = "grey50") +
+
+  # Quadrant annotation (moved up like A01)
+  annotate(
+    "text",
+    x = max(quad_df$x_tilt_ef, na.rm = TRUE) * 0.9,
+    y = max(quad_df$y_red_ef,  na.rm = TRUE) * 0.95,
+    label = paste0("Upper-right quadrant:", n_upper_right, " firms"),
+    hjust = 1.5,
+    vjust = 1,
+    size = 4,
+    fontface = "bold",
+    color = "black"
+  ) +
+
+scale_x_continuous(
+  labels = label_comma(big.mark = ".", decimal.mark = ","),
+  breaks = seq(0, 6, by = 1)
+) +
+coord_cartesian(xlim = c(0, 6)) +
+  scale_y_continuous(labels = label_comma(big.mark = ".", decimal.mark = ",")) +
+  scale_size_area(
+    max_size = 14,
+    breaks = c(1, 10, 20),
+    limits = c(1, 20)
+  ) +
+  labs(
+     x = "Emission intensity (kg CO2e per EUR revenue)",
+    y = "Reduction potential intensity (kg CO2e per EUR revenue)", 
+    size = "Number of firms"
+  ) +
+  theme(
+    legend.position = "top"
+  )
+
+# Show plot
+p_quadrants_c20
+
+# --- 5) Save the plot ---
+ggsave(
+  filename = "02_output_data/06_analysis/Figure-13-quadrant_c20.pdf",
+  plot = p_quadrants_c20,
+  width = 10,
+  height = 6,
+  dpi = 300
+)
+
+
+```

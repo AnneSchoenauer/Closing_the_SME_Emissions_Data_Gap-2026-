@@ -1,0 +1,246 @@
+---
+title: "README"
+author: "Anne Schoenauer
+date: "2025-02-13"
+output: html_document
+---
+
+# Closing the SMEs Emission Data Gap — Code Repository
+
+This repository contains the R Markdown scripts used for the analysis in  
+**“Closing the SMEs Emission Data Gap”**.  
+The scripts follow the structure of the paper and its appendix and are complementary to the main analysis.
+
+Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) and therefore cannot be executed using the publicly available anonymized dataset. These scripts are included for **transparency only**.
+
+---
+
+## Repository Structure
+
+- `00_README.Rmd` – Repository overview  
+- `01_data_quality_checks.Rmd` – Internal data validation  
+- `02_stratification.Rmd` – Sample stratification and weights (Chapter 3)  
+- `03_matching_algorithm_checks.Rmd` – Matching algorithm evaluation (Chapter 3)  
+- `04_robustness_checks_product_weight_assumption.Rmd` – Robustness analysis (Chapter 4)  
+- `05a_benchmark_tilt_sector_averages.Rmd` – Benchmarking with sector averages (Chapter 5.1)  
+- `05b_benchmark_tilt_large_firms.Rmd` – Benchmarking with large firms (Chapter 5.2)  
+- `06_analysis.Rmd` – Main analysis (Chapter 6)  
+- `01_input_data/` – Input data (not fully included)  
+- `02_output_data/` – Generated tables and figures  
+
+---
+
+## Script Descriptions
+
+### 01_data_quality_checks.Rmd
+**Purpose:** Validation and consistency checks of firm-level emissions and reduction potentials.  
+**Reproducibility:** Requires licensed ecoinvent data; not executable with public data.  
+**Outputs:** No figures or tables; exports CSV files listing failed validation checks.  
+**Role:** Transparency and quality assurance only.
+
+---
+
+### 02_stratification.Rmd (Chapter 3: Data)
+**Purpose:** Constructs NACE section × firm size strata and derives post-stratification weights by comparing the SME sample to German SME population benchmarks.  
+**Reproducibility:** Fully executable with public data.  
+**Outputs:**  
+- Table 4 (Appendix): Sample counts, population counts, shares, and weights per stratum (LaTeX).
+
+---
+
+### 03_matching_algorithm_checks.Rmd (Chapter 3: Data)
+**Purpose:** Evaluates the activity-level matching algorithm against manually validated ground truth (precision, error, latency, coverage).  
+**Reproducibility:** Requires licensed ecoinvent data; not executable with public data.  
+**Outputs:**  
+- Table 5 (Appendix): Evaluation metrics for the matching system (LaTeX).  
+**Role:** Transparency only.
+
+---
+
+### 04_robustness_checks_product_weight_assumption.Rmd (Chapter 4: Method)
+**Purpose:** Assesses uncertainty in firm-level emissions arising from unknown product-level revenue shares using Monte Carlo simulations and noise–signal decomposition.  
+**Reproducibility:** Executable with public firm-level outputs.  
+**Outputs:**  
+- Table 6: Noise–signal uncertainty summary  
+- Table 7: Robustness of firm-level emissions rankings  
+- Figure 8: Caterpillar plot with uncertainty intervals  
+- Figure 9: Log-density of emissions with confidence intervals  
+
+---
+
+### 05a_benchmark_tilt_sector_averages.Rmd (Chapter 5.1)
+**Purpose:** Benchmarks tilt-based firm-level emissions against sector-average OECD emission factors and evaluates dispersion and agreement.  
+**Reproducibility:** Partly requires licensed ecoinvent data; not fully executable with public data.  
+**Outputs:**  
+- Figure 2: Tilt vs OECD emissions (scatter with uncertainty)  
+- Figure 3: Relative differences tilt vs OECD  
+- Appendix figures and tables on dispersion, Bland–Altman agreement, and sector totals.
+
+---
+
+### 05b_benchmark_tilt_large_firms.Rmd (Chapter 5.2)
+**Purpose:** Benchmarks tilt-based emissions against reported emissions of large firms (Dataland).  
+**Reproducibility:** Not executable; requires proprietary Dataland data and confidential firm mappings.  
+**Outputs:**  
+- Table 2: Aggregate benchmarking results (main text)  
+- Table 10: Firm-level comparison (Appendix).  
+**Role:** Transparency only.
+
+---
+
+### 06_analysis.Rmd (Chapter 6: Analysis)
+**Purpose:** Main sector-level analysis of SME emissions and reduction potentials, including weighted aggregation, geographic diagnostics, and sector deep-dives.  
+**Reproducibility:** Geographic map requires proprietary coordinates; all other analyses executable with public data.  
+**Outputs:**  
+- Figure 5: Sector emission shares (OECD vs tilt)  
+- Figure 6: Sector × climate-action reduction potential heatmap  
+- Figure 7: Sector deep-dive (A01 – agriculture)  
+- Figure 13: Sector deep-dive (C20 – chemicals, Appendix)  
+
+---
+
+## Suggested Execution Order
+
+1. `02_stratification.Rmd`  
+2. `04_robustness_checks_product_weight_assumption.Rmd`  
+3. `05a_benchmark_tilt_sector_averages.Rmd`  
+4. `06_analysis.Rmd`
+
+Scripts `01`, `03`, and `05b` are included for transparency and documentation of internal validation and benchmarking steps.
+
+---
+
+## Reproducibility Summary
+
+| Script                        | Executable with Public Data | Notes                            |
+|-------------------------------|-----------------------------|----------------------------------|
+| 01_data_quality_checks        | No                          | ecoinvent required               |
+| 02_stratification             | Yes                         | –                                |
+| 03_matching_algorithm_checks  | No                          | ecoinvent required               |
+| 04_robustness_checks          | Yes                         | firm-level outputs required      |
+| 05a_benchmark_sector_averages | Partly                      | ecoinvent required               |
+| 05b_benchmark_large_firms     | No                          | proprietary Dataland data        |
+| 06_analysis                   | Partly                      | map uses proprietary coordinates |
+
+---
+
+## Description of the  Input Data (`01_input_data/`)
+
+The folder `01_input_data/` contains all datasets used across the analysis.  
+Due to data licensing and confidentiality constraints, **not all subfolders are included in the public reproduction package**. Proprietary datasets are documented for transparency.
+
+---
+
+### 01_firm_level_data/
+
+Contains firm-level datasets used for the main analysis and benchmarking.
+
+#### 01_tilt_data/
+Includes the anonymized firm-level research dataset:
+
+- `tilt_firm_level_results_anon.csv`  
+  Anonymized firm-level emissions and reduction potential results for SMEs included in the analysis.
+
+**Key variables include:**
+- Identifiers and firm characteristics:  
+  `company_id` (anonymized), `state`, `city`, `EmployeesTotal`, `Revenue` (EUR),  
+  number of matched products, Dataland flag (TRUE / NA), product descriptions.
+
+- Sector classification:  
+  `nace_2_list` (2-digit NACE codes),  
+  `nace_section` (1-digit NACE or "multi-sector"),  
+  `nace_section_list_adjusted` (1-digit codes with sector names).
+
+- Tilt-based emissions (tonnes CO₂e):  
+  `tilt_method_TE_MEAN_tonnes`, `tilt_method_TE_SD_tonnes`,  
+  Scope 1, 2, and 3 mean emissions,  
+  corresponding 5th and 95th percentiles for all emissions variables.
+
+- Emission reduction potentials (tonnes CO₂e):  
+  `tilt_method_MEAN_reduction_potential`,  
+  reduction potentials from efficient agricultural machinery (ab2),  
+  solar panels (re1), and heat pumps (re4),  
+  including 5th and 95th percentiles.
+
+- Benchmark emissions (for comparison):  
+  OECD-based emissions at 2-digit NACE level:  
+  total, Scope 1, Scope 2, Scope 3 (mean, 5th, 95th percentiles).  
+  EPA-based emissions at commodity level:  
+  total, Scope 1, Scope 2, Scope 3 (mean, 5th, 95th percentiles).
+
+- `mapper_company_id_longitude_latitude.csv`  
+  Maps anonymized company IDs to geographic coordinates for Figure 4.  
+  Longitude and latitude originate from Infobel and are **not included** in the public package.
+
+Read the Dictionary for further information: 
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+dictionary_tilt_firm_level_results_anon <- read_csv(here("01_input_data/01_firm_level_data/01_tilt_data/tilt_firm_level_results_anon_data_dictionary.csv"))
+
+view(dictionary_tilt_firm_level_results_anon)
+
+```
+---
+
+### 02_Infobel/
+Proprietary firm registry data from Infobel.  
+**Not included** in the reproduction package.
+
+---
+
+### 03_Population_SME_key_figures_2025/
+Contains German SME population benchmarks by:
+- 2-digit NACE code  
+- Employee size class  
+
+Used for post-stratification and weighting in `02_stratification.Rmd`.  
+Publicly available aggregate statistics.
+
+---
+
+### 04_Dataland/
+Contains firm-level reported emissions data from Dataland:
+- `Dataland_firm_level.xlsx` – firms located in Germany with reported Scope 1, 2, and 3 emissions  
+- `mapper_between_Dataland_Infobel.csv` – confidential firm mapping  
+
+Both files are **proprietary and not included** in the reproduction package.
+
+---
+
+### 02_product_level_data/
+Anonymized product-level data with associated emission factors.  
+As these are **pure emission factors**, the data cannot be published and is **not included**.
+
+---
+
+### 03_activity_level_data/
+
+#### 01_tilt_data/
+- `tilt_activity_level.csv`  
+  Activity-level emissions data used in the tilt pipeline.  
+  Proprietary and not included.
+
+- Matching validation outputs comparing products to ecoinvent and EPA activities.  
+  Proprietary and not included.
+
+#### 02_oecd_data/
+OECD emission factors at the 2-digit NACE level constructed in Section 4.3.  
+Included where licensing permits.
+
+#### 03_ecoinvent_data/
+Process-based LCA data from ecoinvent.  
+Proprietary and not included.
+
+#### 04_epa_data/
+EPA EEIO-LCA emission factors at the commodity level.  
+Included where licensing permits.
+
+---
+
+### 04_nace_name_mapper/
+Helper file mapping 1-digit NACE codes to sector names.  
+Used for labeling and visualization.
+
+---
+
+
