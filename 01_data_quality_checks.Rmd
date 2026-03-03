@@ -22,7 +22,6 @@ Multiple datasets are imported, including:
 - Product-level company matching results,
 - Activity-level emissions datasets (Ecoinvent, EPA, OECD),
 - tilt activity-level data,
-- Final firm-level climate action and reduction potential outputs.
 
 Company identifiers are standardized to ensure consistent joins across datasets.
 
