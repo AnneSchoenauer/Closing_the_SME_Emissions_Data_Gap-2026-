@@ -1,0 +1,88 @@
+nace_2,nace_section_code,nace_section,emission_factor_s1_per_euro,emission_factor_s2_per_euro,emission_factor_s3_per_euro,emission_factor_per_euro,activity_name,data_source
+Q87,Q,Human health and social work activities,0.0111786008,0.0154484209,0.0515720485,0.0781990702,Human health and social work activities,OECD_EMISSION_FACTORS
+C10,C,Manufacturing,0.0431986444,0.0162115429,0.3229589990,0.3823691863,Manufacture of food products; beverages and tobacco products,OECD_EMISSION_FACTORS
+J59,J,Information and communication,0.0068262953,0.0099102559,0.0676045783,0.0843411295,"Publishing, motion picture, video, television programme production; sound recording, programming and broadcasting activities",OECD_EMISSION_FACTORS
+R92,R,"Arts, entertainment and recreation",0.0121257702,0.0201262785,0.0506976648,0.0829497135,"Arts, entertainment and recreation",OECD_EMISSION_FACTORS
+A03,A,"Agriculture, forestry and fishing",0.0361351884,0.0228856193,0.1204506280,0.1794714357,Fishing and aquaculture,OECD_EMISSION_FACTORS
+C27,C,Manufacturing,0.0056551901,0.0125646999,0.1924556519,0.2106755419,Manufacture of electrical equipment,OECD_EMISSION_FACTORS
+H50,H,Transportation and storage,0.7230142361,0.0015934482,0.4364248807,1.1610325650,Water transport,OECD_EMISSION_FACTORS
+E39,E,"Water supply; sewerage, waste management and remediation activities",0.1646458580,0.0278798068,0.1084987490,0.3010244138,"Water supply; sewerage, waste management and remediation activities",OECD_EMISSION_FACTORS
+N79,N,Administrative and support service activities,0.0033349683,0.0084642257,0.0599089651,0.0717081591,Administrative and support service activities,OECD_EMISSION_FACTORS
+G46,G,Wholesale and retail trade; repair of motor vehicles and motorcycles,0.0203157310,0.0200718626,0.0676485973,0.1080361909,Wholesale and retail trade; repair of motor vehicles and motorcycles,OECD_EMISSION_FACTORS
+J61,J,Information and communication,0.0026123297,0.0173518158,0.0650321420,0.0849962875,Telecommunications,OECD_EMISSION_FACTORS
+K66,K,Financial and insurance activities,0.0038709304,0.0076487832,0.0393909599,0.0509106735,Financial and insurance activities,OECD_EMISSION_FACTORS
+N80,N,Administrative and support service activities,0.0033349683,0.0084642257,0.0599089651,0.0717081591,Administrative and support service activities,OECD_EMISSION_FACTORS
+B05,B,Mining and quarrying,3.8749989297,0.2637841522,2.4412201245,6.5800032064,Mining and extraction of energy producing products,OECD_EMISSION_FACTORS
+J60,J,Information and communication,0.0068262953,0.0099102559,0.0676045783,0.0843411295,"Publishing, motion picture, video, television programme production; sound recording, programming and broadcasting activities",OECD_EMISSION_FACTORS
+M73,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+R90,R,"Arts, entertainment and recreation",0.0121257702,0.0201262785,0.0506976648,0.0829497135,"Arts, entertainment and recreation",OECD_EMISSION_FACTORS
+M75,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+F41,F,Construction,0.0185046817,0.0082364053,0.1680115785,0.1947526655,Construction,OECD_EMISSION_FACTORS
+T98,T,Activities of households as employers,0.0000000000,0.0000000000,0.0000000000,0.0000000000,Activities of households as employers; undifferentiated goods- and services-producing activities of households for own use,OECD_EMISSION_FACTORS
+J62,J,Information and communication,0.0026394478,0.0037693638,0.0334508703,0.0398596819,"Computer programming, consultancy, and information service activities",OECD_EMISSION_FACTORS
+C28,C,Manufacturing,0.0074518663,0.0120071703,0.1732293880,0.1926884246,Manufacture of machinery and equipment n.e.c.,OECD_EMISSION_FACTORS
+C32,C,Manufacturing,0.0085464190,0.0091945600,0.1648840864,0.1826250654,"Manufacture of furniture; jewellery, musical instruments, toys, etc.; repair and installation of machinery and equipment",OECD_EMISSION_FACTORS
+K65,K,Financial and insurance activities,0.0038709304,0.0076487832,0.0393909599,0.0509106735,Financial and insurance activities,OECD_EMISSION_FACTORS
+C30,C,Manufacturing,0.0087351983,0.0058501787,0.1809708695,0.1955562465,Manufacture of other transport equipment,OECD_EMISSION_FACTORS
+C31,C,Manufacturing,0.0085464190,0.0091945600,0.1648840864,0.1826250654,"Manufacture of furniture; jewellery, musical instruments, toys, etc.; repair and installation of machinery and equipment",OECD_EMISSION_FACTORS
+C26,C,Manufacturing,0.0091639401,0.0109354697,0.1520949161,0.1721943259,"Manufacture of computer, electronic and optical products",OECD_EMISSION_FACTORS
+B06,B,Mining and quarrying,3.8749989297,0.2637841522,2.4412201245,6.5800032064,Mining and extraction of energy producing products,OECD_EMISSION_FACTORS
+C15,C,Manufacturing,0.0217426841,0.0263937278,0.1902390324,0.2383754443,"Manufacture of textiles, wearing apparel, leather and related products",OECD_EMISSION_FACTORS
+N78,N,Administrative and support service activities,0.0033349683,0.0084642257,0.0599089651,0.0717081591,Administrative and support service activities,OECD_EMISSION_FACTORS
+E36,E,"Water supply; sewerage, waste management and remediation activities",0.1646458580,0.0278798068,0.1084987490,0.3010244138,"Water supply; sewerage, waste management and remediation activities",OECD_EMISSION_FACTORS
+K64,K,Financial and insurance activities,0.0038709304,0.0076487832,0.0393909599,0.0509106735,Financial and insurance activities,OECD_EMISSION_FACTORS
+A01,A,"Agriculture, forestry and fishing",0.8113732504,0.0260263036,0.1988098829,1.0362094369,"Crop and animal production, hunting and related service activities; Forestry and logging",OECD_EMISSION_FACTORS
+I56,I,Accommodation and food service activities,0.0284324807,0.0380866668,0.1331510775,0.1996702250,Accommodation and food service activities,OECD_EMISSION_FACTORS
+F42,F,Construction,0.0185046817,0.0082364053,0.1680115785,0.1947526655,Construction,OECD_EMISSION_FACTORS
+S96,S,Other service activities,0.0376290147,0.0196392753,0.0502536797,0.1075219697,Other service activities,OECD_EMISSION_FACTORS
+B07,B,Mining and quarrying,0.1365912547,0.0267805715,0.1475516430,0.3109234692,Mining and quarrying of non-energy producing products,OECD_EMISSION_FACTORS
+C12,C,Manufacturing,0.0431986444,0.0162115429,0.3229589990,0.3823691863,Manufacture of food products; beverages and tobacco products,OECD_EMISSION_FACTORS
+M74,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+H51,H,Transportation and storage,0.5681339919,0.0020237497,0.2261652692,0.7963230108,Air transport,OECD_EMISSION_FACTORS
+N77,N,Administrative and support service activities,0.0033349683,0.0084642257,0.0599089651,0.0717081591,Administrative and support service activities,OECD_EMISSION_FACTORS
+M70,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+O84,O,Public administration and defence; compulsory social security,0.0117511389,0.0142012848,0.0627309066,0.0886833303,Public administration and defence; compulsory social security,OECD_EMISSION_FACTORS
+J58,J,Information and communication,0.0068262953,0.0099102559,0.0676045783,0.0843411295,"Publishing, motion picture, video, television programme production; sound recording, programming and broadcasting activities",OECD_EMISSION_FACTORS
+E38,E,"Water supply; sewerage, waste management and remediation activities",0.1646458580,0.0278798068,0.1084987490,0.3010244138,"Water supply; sewerage, waste management and remediation activities",OECD_EMISSION_FACTORS
+I55,I,Accommodation and food service activities,0.0284324807,0.0380866668,0.1331510775,0.1996702250,Accommodation and food service activities,OECD_EMISSION_FACTORS
+H49,H,Transportation and storage,0.0996758698,0.0422340354,0.1022332350,0.2441431402,Land transport and transport via pipelines,OECD_EMISSION_FACTORS
+M69,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+C14,C,Manufacturing,0.0217426841,0.0263937278,0.1902390324,0.2383754443,"Manufacture of textiles, wearing apparel, leather and related products",OECD_EMISSION_FACTORS
+F43,F,Construction,0.0185046817,0.0082364053,0.1680115785,0.1947526655,Construction,OECD_EMISSION_FACTORS
+S95,S,Other service activities,0.0376290147,0.0196392753,0.0502536797,0.1075219697,Other service activities,OECD_EMISSION_FACTORS
+L68,L,Real estate activities,0.0008614474,0.0074233996,0.0317784031,0.0400632501,Real estate activities,OECD_EMISSION_FACTORS
+S94,S,Other service activities,0.0376290147,0.0196392753,0.0502536797,0.1075219697,Other service activities,OECD_EMISSION_FACTORS
+D35,D,"Electricity, gas, steam and air conditioning supply",1.0542194197,0.2380553356,0.1407457936,1.4330205489,"Electricity, gas, steam and air conditioning supply",OECD_EMISSION_FACTORS
+C16,C,Manufacturing,0.0171153553,0.0234468803,0.2484906733,0.2890529089,"Manufacture of wood and of products of wood and cork, except furniture; manufacture of articles of straw and plaiting materials",OECD_EMISSION_FACTORS
+C20,C,Manufacturing,0.1541943703,0.0283134948,0.2285271370,0.4110350021,Manufacture of chemicals and chemical products,OECD_EMISSION_FACTORS
+G47,G,Wholesale and retail trade; repair of motor vehicles and motorcycles,0.0203157310,0.0200718626,0.0676485973,0.1080361909,Wholesale and retail trade; repair of motor vehicles and motorcycles,OECD_EMISSION_FACTORS
+C18,C,Manufacturing,0.1402530453,0.0405344622,0.1780939933,0.3588815008,Manufacture of paper and paper products; printing and reproduction of recorded media,OECD_EMISSION_FACTORS
+J63,J,Information and communication,0.0026394478,0.0037693638,0.0334508703,0.0398596819,"Computer programming, consultancy, and information service activities",OECD_EMISSION_FACTORS
+N82,N,Administrative and support service activities,0.0033349683,0.0084642257,0.0599089651,0.0717081591,Administrative and support service activities,OECD_EMISSION_FACTORS
+C22,C,Manufacturing,0.0228766358,0.0304248625,0.1972203761,0.2505218744,Manufacture of rubber and plastics products,OECD_EMISSION_FACTORS
+G45,G,Wholesale and retail trade; repair of motor vehicles and motorcycles,0.0203157310,0.0200718626,0.0676485973,0.1080361909,Wholesale and retail trade; repair of motor vehicles and motorcycles,OECD_EMISSION_FACTORS
+C17,C,Manufacturing,0.1402530453,0.0405344622,0.1780939933,0.3588815008,Manufacture of paper and paper products; printing and reproduction of recorded media,OECD_EMISSION_FACTORS
+C13,C,Manufacturing,0.0217426841,0.0263937278,0.1902390324,0.2383754443,"Manufacture of textiles, wearing apparel, leather and related products",OECD_EMISSION_FACTORS
+H53,H,Transportation and storage,0.0637599660,0.0170193578,0.1147738330,0.1955531568,Postal and courier activities,OECD_EMISSION_FACTORS
+P85,P,Education,0.0117539285,0.0099227419,0.0271740448,0.0488507152,Education,OECD_EMISSION_FACTORS
+C23,C,Manufacturing,0.5536455686,0.0480816657,0.2308375704,0.8325648047,Manufacture of other non-metallic mineral products,OECD_EMISSION_FACTORS
+M72,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+Q86,Q,Human health and social work activities,0.0111786008,0.0154484209,0.0515720485,0.0781990702,Human health and social work activities,OECD_EMISSION_FACTORS
+C25,C,Manufacturing,0.0156467186,0.0181191669,0.2336221134,0.2673879989,"Manufacture of fabricated metal products, except machinery and equipment",OECD_EMISSION_FACTORS
+T97,T,Activities of households as employers,0.0000000000,0.0000000000,0.0000000000,0.0000000000,Activities of households as employers; undifferentiated goods- and services-producing activities of households for own use,OECD_EMISSION_FACTORS
+C19,C,Manufacturing,0.4603924679,0.0273983831,0.4332929761,0.9210838271,Manufacture of coke and refined petroleum products,OECD_EMISSION_FACTORS
+E37,E,"Water supply; sewerage, waste management and remediation activities",0.1646458580,0.0278798068,0.1084987490,0.3010244138,"Water supply; sewerage, waste management and remediation activities",OECD_EMISSION_FACTORS
+R93,R,"Arts, entertainment and recreation",0.0121257702,0.0201262785,0.0506976648,0.0829497135,"Arts, entertainment and recreation",OECD_EMISSION_FACTORS
+R91,R,"Arts, entertainment and recreation",0.0121257702,0.0201262785,0.0506976648,0.0829497135,"Arts, entertainment and recreation",OECD_EMISSION_FACTORS
+C24,C,Manufacturing,0.4789140197,0.0515068948,0.5966700654,1.1270909799,Manufacture of basic metals,OECD_EMISSION_FACTORS
+M71,M,"Professional, scientific and technical activities",0.0076082518,0.0093680868,0.0415666183,0.0585429569,"Professional, scientific and technical activities",OECD_EMISSION_FACTORS
+C11,C,Manufacturing,0.0431986444,0.0162115429,0.3229589990,0.3823691863,Manufacture of food products; beverages and tobacco products,OECD_EMISSION_FACTORS
+B09,B,Mining and quarrying,0.0344988129,0.0156812786,0.0784063932,0.1285864847,Mining support service activities,OECD_EMISSION_FACTORS
+C21,C,Manufacturing,0.0160161381,0.0177405286,0.1790744956,0.2128311623,Manufacture of basic pharmaceutical products and pharmaceutical preparations,OECD_EMISSION_FACTORS
+C33,C,Manufacturing,0.0085464190,0.0091945600,0.1648840864,0.1826250654,"Manufacture of furniture; jewellery, musical instruments, toys, etc.; repair and installation of machinery and equipment",OECD_EMISSION_FACTORS
+N81,N,Administrative and support service activities,0.0033349683,0.0084642257,0.0599089651,0.0717081591,Administrative and support service activities,OECD_EMISSION_FACTORS
+B08,B,Mining and quarrying,0.1365912547,0.0267805715,0.1475516430,0.3109234692,Mining and quarrying of non-energy producing products,OECD_EMISSION_FACTORS
+H52,H,Transportation and storage,0.0493660703,0.0102262051,0.1315603139,0.1911525893,Warehousing and support activities for transportation,OECD_EMISSION_FACTORS
+Q88,Q,Human health and social work activities,0.0111786008,0.0154484209,0.0515720485,0.0781990702,Human health and social work activities,OECD_EMISSION_FACTORS
+C29,C,Manufacturing,0.0136944276,0.0097920520,0.1763510481,0.1998375277,"Manufacture of motor vehicles, trailers and semi-trailers",OECD_EMISSION_FACTORS
+A02,A,"Agriculture, forestry and fishing",0.8113732504,0.0260263036,0.1988098829,1.0362094369,"Crop and animal production, hunting and related service activities; Forestry and logging",OECD_EMISSION_FACTORS
