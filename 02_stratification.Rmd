@@ -8,16 +8,15 @@ output: html_document
 The code generates Table 4 "Overview table of sample set counts and shares as well as population size counts and shares and weights per stratum, incl. shares (in%) compared to total dataset" in the Appendix. 
 
 ## Overview of the analysis workflow
-This R Markdown script processes German SME population benchmarks and firm-level sample data, constructs common strata by NACE section and employee size class, evaluates sample coverage across strata, and derives post-stratification weights.
+This R Markdown script processes German SME population counts and firm-level sample data, constructs common strata by NACE section and employee size class, evaluates sample coverage across strata, and derives post-stratification weights.
 
 ### 01. Loading in the Libraries
 Loads the R packages needed for reading files, cleaning/wrangling data, and producing tables.
 
 ### 02. Preparing the Data
 Loads and prepares two datasets:
-  - Population benchmarks (Germany SME factsheet Excel): cleans messy Excel structure (merged cells/blank rows), keeps 
-  - SME size classes (micro/small/medium), and extracts NACE identifiers (section letter, 2-digit code).
-Sample firm-level data (CSV): filters to SMEs (employees < 250, revenue ≤ 50m) and keeps only firms with positive emissions; creates the same micro/small/medium size classes.
+  - Population counts (Germany SME factsheet Excel): cleans messy Excel structure (merged cells/blank rows), keeps SME size classes (micro/small/medium), and extracts NACE identifiers (section letter, 2-digit code).
+  - Sample firm-level data (CSV): filters to SMEs (employees < 250, revenue ≤ 50m) and keeps only firms with positive emissions; creates the same micro/small/medium size classes.
 
 ## 03. Population vs. sample data
 Aligns both datasets to the same strata (NACE section × employee size class), then:
