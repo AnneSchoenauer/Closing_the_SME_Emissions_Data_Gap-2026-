@@ -35,8 +35,7 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 ### 01_data_quality_checks.Rmd
 **Purpose:** Validation and consistency checks of firm-level emissions and reduction potentials.  
 **Reproducibility:** Requires licensed ecoinvent data; not executable with public data.  
-**Outputs:** No figures or tables; exports CSV files listing failed validation checks.  
-**Role:** Transparency and quality assurance only.
+**Outputs:** No figures or tables; exports CSV files listing failed validation checks (all empty as no test failed).  
 
 ---
 
@@ -53,7 +52,6 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Reproducibility:** Requires licensed ecoinvent data; not executable with public data.  
 **Outputs:**  
 - Table 5 (Appendix): Evaluation metrics for the matching system (LaTeX).  
-**Role:** Transparency only.
 
 ---
 
@@ -84,7 +82,6 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Outputs:**  
 - Table 2: Aggregate benchmarking results (main text)  
 - Table 10: Firm-level comparison (Appendix).  
-**Role:** Transparency only.
 
 ---
 
