@@ -44,6 +44,7 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Reproducibility:** Fully executable with public data.  
 **Outputs:**  
 - Table 4 (Appendix): Sample counts, population counts, shares, and weights per stratum (LaTeX).
+- Output datasets to weight sample for representative purposes
 
 ---
 
@@ -70,9 +71,12 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Purpose:** Benchmarks tilt-based firm-level emissions against sector-average OECD emission factors and evaluates dispersion and agreement.  
 **Reproducibility:** Partly requires licensed ecoinvent data; not fully executable with public data.  
 **Outputs:**  
+- Table 1: Coefficient of variation (CV) comparison between tilt, EPA and OECD emission factors
 - Figure 2: Tilt vs OECD emissions (scatter with uncertainty)  
 - Figure 3: Relative differences tilt vs OECD  
-- Appendix figures and tables on dispersion, Bland–Altman agreement, and sector totals.
+- Figure 10 (Appendix): Granularity plot - comparing tilt, EPA, OECD emission factors (for sector A01 and C20)
+- Figure 11 (Appendix): Bland Altman test
+- Figure 12 (Appendix): Boxplot per sector showing relative differences between tilt and OECD emission calculations
 
 ---
 
@@ -80,8 +84,8 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Purpose:** Benchmarks tilt-based emissions against reported emissions of large firms (Dataland).  
 **Reproducibility:** Not executable; requires proprietary Dataland data and confidential firm mappings.  
 **Outputs:**  
-- Table 2: Aggregate benchmarking results (main text)  
-- Table 10: Firm-level comparison (Appendix).  
+- Table 2: Aggregate benchmarking results  
+- Table 10 (Appendix): Firm-level comparison  
 
 ---
 
@@ -89,10 +93,11 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Purpose:** Main sector-level analysis of SME emissions and reduction potentials, including weighted aggregation, geographic diagnostics, and sector deep-dives.  
 **Reproducibility:** Geographic map requires proprietary coordinates; all other analyses executable with public data.  
 **Outputs:**  
+- Figure 4: German map showing all firms and their emission rank
 - Figure 5: Sector emission shares (OECD vs tilt)  
 - Figure 6: Sector × climate-action reduction potential heatmap  
 - Figure 7: Sector deep-dive (A01 – agriculture)  
-- Figure 13: Sector deep-dive (C20 – chemicals, Appendix)  
+- Figure 13 (Appendix): Sector deep-dive (C20 – chemicals, Appendix)  
 
 ---
 
