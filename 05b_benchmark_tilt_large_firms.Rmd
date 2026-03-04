@@ -301,13 +301,10 @@ yn_latex <- function(x) {
 # --- Generate LaTeX rows ---
 latex_rows <- apply(RelDif, 1, function(row) {
   sprintf(
-    "%s & %.2f & %s & %s & %s & %s & %s & %s & %s & %s &  %s & %s & %s & %s \\\\",
+    "%s & %s & %s & %s & %s & %s & %s & %s & %s &  %s & %s & %s & %s \\\\",
     
     # Company name
     latex_escape(row["CompanyName"]),
-    
-    # Revenues in 1,000 EUR
-    as.numeric(row["RelDif_oecdf_turnover"]),
     
     # Dataland emissions (tCO2e)
     formatC(as.numeric(row["scope1_dataland"]), format = "f", digits = 0, big.mark = ","),
