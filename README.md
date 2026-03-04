@@ -12,6 +12,7 @@ This repository contains the R Markdown scripts used for the analysis in
 The scripts follow the structure of the paper and its appendix and are complementary to the main analysis.
 
 Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) and therefore cannot be executed using the publicly available anonymized dataset. These scripts are included for **transparency only**.
+Please note that Figure 1 and Table 3 are not generated from data and are therefore not included in this script.
 
 ---
 
@@ -60,10 +61,10 @@ Some scripts require **licensed or proprietary data** (e.g. ecoinvent, Infobel) 
 **Purpose:** Assesses uncertainty in firm-level emissions arising from unknown product-level revenue shares using Monte Carlo simulations and noise–signal decomposition.  
 **Reproducibility:** Executable with public firm-level outputs.  
 **Outputs:**  
-- Table 6: Noise–signal uncertainty summary  
-- Table 7: Robustness of firm-level emissions rankings  
-- Figure 8: Caterpillar plot with uncertainty intervals  
-- Figure 9: Log-density of emissions with confidence intervals  
+- Table 6 (Appendix): Noise–signal uncertainty summary  
+- Table 7 (Appendix): Robustness of firm-level emissions rankings  
+- Figure 8 (Appendix): Caterpillar plot with uncertainty intervals  
+- Figure 9 (Appendix): Log-density of emissions with confidence intervals  
 
 ---
 
