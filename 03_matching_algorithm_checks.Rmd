@@ -88,114 +88,96 @@ scale_fill_viridis_d <- function(...) scale_fill_viridis(discrete = TRUE, option
 ##02. Creating the first part of the evaluation metric (MAPE, precision@1 and precision@10)
 ```{r, warning=FALSE, message=FALSE}
 # For false positives, precision.
-Matching_validation <- read_delim(
-  here("01_input_data", "03_activity_level_data", "01_tilt_data", "Matching_validation.csv"),
-  delim = ";"
+Matching_validation <- read_csv2(
+  here("01_input_data", "03_activity_level_data", "01_tilt_data", "Matching_validation.csv")
 ) %>%
-  select(company_id, company_name_input, related_company_product, activity_name,
-         co2_footprint_per_euro, match_eval_score, match_selected, lca_id,
-         validation_Anne, validation_Tilman)
+  select(
+    company_id,
+    lca_id,
+    related_company_product,
+    total_emissions_per_eur,
+    activity_name,
+    match_eval_score,
+    match_selected_after_filtering,
+    validation_Anne
+  ) %>%
+  distinct(company_id, lca_id, activity_name, related_company_product, .keep_all = TRUE) %>%
+  rename(co2_footprint_per_euro = total_emissions_per_eur) %>%
+  filter(co2_footprint_per_euro > 0)
 
-Latency_matching_score <- read_csv(
-  here("01_input_data/03_activity_level_data/01_tilt_data/tilt_activity_level.csv")
-) %>%
-  select(company_id, lca_id, related_company_product, match_selected_after_filtering)
-
-Matching_validation <- Matching_validation %>%
-  left_join(Latency_matching_score,
-            by = c("company_id", "lca_id", "related_company_product"))
-
-## Building the model's prediction table (one prediction per product)
-predicted_EF_df <- Matching_validation %>%
+#Extract the product predictions
+predicted <- Matching_validation %>%
   filter(match_selected_after_filtering == TRUE) %>%
   select(
     company_id,
     related_company_product,
     predicted_EF = co2_footprint_per_euro,
-    model_selected_candidate_id = lca_id,
-    activity_name
-  ) %>%
-  distinct(company_id, related_company_product, model_selected_candidate_id, .keep_all = TRUE)
+    validation_Anne
+  )
 
-## Building the ground truth accepted by manual validation (Anne)
-accepted_by_anne <- Matching_validation %>%
+#Extract the ground truth
+truth <- Matching_validation %>%
   filter(validation_Anne == 1) %>%
   select(
     company_id,
     related_company_product,
-    activity_name,
-    accepted_candidate_id = lca_id,
     true_EF = co2_footprint_per_euro
-  ) %>%
-  distinct(company_id, related_company_product, accepted_candidate_id, .keep_all = TRUE)
-
-# Compare prediction vs. accepted candidates (keep this object for later MAPE logic)
-comparison <- predicted_EF_df %>%
-  left_join(
-    accepted_by_anne,
-    by = c("company_id", "related_company_product")
-  ) %>%
-  mutate(
-    is_true_match = !is.na(accepted_candidate_id) &
-      model_selected_candidate_id == accepted_candidate_id
   )
 
-# Collapse to ONE row per product prediction (avoids double counting due to joins)
-match_eval <- comparison %>%
-  group_by(company_id, related_company_product) %>%
-  summarise(
-    predicted_EF = first(predicted_EF),
-    model_selected_candidate_id = first(model_selected_candidate_id),
-    correct = any(is_true_match),
-    .groups = "drop"
-  )
+false_matches <- predicted %>%
+  filter(validation_Anne == 0)
 
-# Prepare data for MAPE on incorrect predictions (one true EF per product if multiple accepted exist)
-mape_data <- match_eval %>%
-  filter(!correct) %>%
+#Combine the predictions and truth
+mape_data <- false_matches %>%
   left_join(
-    accepted_by_anne %>%
-      group_by(company_id, related_company_product) %>%
-      summarise(true_EF = first(true_EF), .groups = "drop"),
+    truth,
     by = c("company_id", "related_company_product")
   ) %>%
-  mutate(
-    predicted_EF = parse_number(predicted_EF, locale = locale(decimal_mark = ",")),
-    true_EF = parse_number(true_EF, locale = locale(decimal_mark = ","))
-  ) %>%
-  filter(!is.na(predicted_EF), !is.na(true_EF), true_EF != 0) %>%
   mutate(
     ape = abs(predicted_EF - true_EF) / abs(true_EF)
   )
 
-# compute MAPE
-mape <- mean(mape_data$ape) * 100
+mape <- mean(mape_data$ape, na.rm = TRUE) * 100
+
 
 # ----------------------------
 # compute Precision@1 (product-level)
 # ----------------------------
-precision_at_1 <- mean(match_eval$correct, na.rm = TRUE)
+precision_at_1 <- Matching_validation %>%
+  filter(match_selected_after_filtering == TRUE) %>%
+  summarise(precision_at_1 = mean(validation_Anne == 1, na.rm = TRUE)) %>%
+  pull(precision_at_1)
+
+cat("Precision@1:", round(precision_at_1, 3), "\n")
 
 # ----------------------------
 # compute Precision@K (our "list" size, using top K candidates by match_eval_score)
 # If the candidate list is shorter than K, we only use all available candidates.
 # ----------------------------
-K <- 10
-
-precision_at_10 <- Matching_validation %>%
+precision10_data <- Matching_validation %>%
+  
+  # rank candidates within each product
   group_by(company_id, related_company_product) %>%
   arrange(desc(match_eval_score), .by_group = TRUE) %>%
+  
+  # assign rank
   mutate(rank = row_number()) %>%
+  
+  # keep top 10 (or fewer if less exist)
+  filter(rank <= 10) %>%
+  
+  # check if a true match is inside top 10
   summarise(
-    correct_in_topk = any(validation_Anne == 1 & rank <= K),
+    hit = any(validation_Anne == 1, na.rm = TRUE),
     .groups = "drop"
-  ) %>%
-  summarise(precision_at_10 = mean(correct_in_topk, na.rm = TRUE)) %>%
-  pull(precision_at_10)
+  )
+
+precision_at_10 <- mean(precision10_data$hit, na.rm = TRUE)
+
 
 ## Export the metrics table
 evaluation_table <- tibble(
-  Metric = c("Precision@1", paste0("Precision@", K), "MAPE"),
+  Metric = c("Precision@1", paste0("Precision@"), "MAPE"),
   Value = c(round(precision_at_1, 3),
             round(precision_at_10, 3),
             round(mape, 2))
